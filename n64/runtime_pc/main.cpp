@@ -29,6 +29,19 @@ static void showError(const char* title, const char* msg) {
 #endif
 }
 
+/** Called every frame with delta time in seconds. Plug engine update here (step 3). */
+static void p64_pc_update(float dt) {
+    (void)dt;
+    /* No-op until engine is wired in. */
+}
+
+/** Called every frame after update. Do all rendering and present. Plug engine draw here (step 3). */
+static void p64_pc_draw(void) {
+    glClearColor(0.15f, 0.2f, 0.25f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    /* Placeholder until engine/rendering is wired in. */
+}
+
 int main(int argc, char* argv[])
 {
     /* Required when using SDL_MAIN_HANDLED: tell SDL the app entry point is ready. */
@@ -81,8 +94,10 @@ int main(int argc, char* argv[])
     }
 
     printf("Project path: %s\n", projectPath);
-    printf("OpenGL context created. Close window to exit.\n");
+    printf("OpenGL context created. Game loop running (delta time + update/draw). Close window or ESC to exit.\n");
 
+    /* Game loop: delta time from SDL, then update(dt) and draw() each frame. */
+    Uint64 lastTicks = SDL_GetTicks();
     bool running = true;
     while (running) {
         SDL_Event e;
@@ -93,8 +108,15 @@ int main(int argc, char* argv[])
                 running = false;
         }
 
-        glClearColor(0.15f, 0.2f, 0.25f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        Uint64 now = SDL_GetTicks();
+        float dt = (float)(now - lastTicks) / 1000.0f;
+        lastTicks = now;
+        /* Cap delta so one long frame (e.g. after pause) doesn't jump the sim. */
+        if (dt > 0.25f)
+            dt = 0.25f;
+
+        p64_pc_update(dt);
+        p64_pc_draw();
         SDL_GL_SwapWindow(window);
     }
 
