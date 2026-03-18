@@ -3,6 +3,7 @@
  * Uses desktop OpenGL on Windows (no GLES2 headers required). Loads project data from P64_PROJECT_PATH.
  */
 #define SDL_MAIN_HANDLED  /* we use our own main(), not SDL's WinMain */
+#include "pc_platform.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_video.h>
@@ -36,6 +37,7 @@ int main(int argc, char* argv[])
     const char* projectPath = P64_PROJECT_PATH;
     if (argc > 1)
         projectPath = argv[1];
+    p64_pc_set_project_path(projectPath);
 
 #ifdef _WIN32
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "windows");

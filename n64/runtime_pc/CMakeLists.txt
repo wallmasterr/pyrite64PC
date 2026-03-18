@@ -9,9 +9,10 @@ if(WIN32)
 endif()
 add_subdirectory(${PYRITE64_ROOT}/vendored/SDL ${CMAKE_BINARY_DIR}/SDL EXCLUDE_FROM_ALL)
 
-add_executable(p64_pc_runtime main.cpp)
+set(PCRT_PLATFORM_SOURCES main.cpp pc_platform.c)
+add_executable(p64_pc_runtime ${PCRT_PLATFORM_SOURCES})
 set_target_properties(p64_pc_runtime PROPERTIES OUTPUT_NAME "${P64_ROM_NAME}_pc")
-target_include_directories(p64_pc_runtime PRIVATE ${PYRITE64_ROOT}/vendored/SDL/include)
+target_include_directories(p64_pc_runtime PRIVATE ${PYRITE64_ROOT}/vendored/SDL/include ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(p64_pc_runtime PRIVATE SDL3::SDL3)
 if(WIN32)
   # Match SDL's Windows link libs so video/events/ole etc. resolve when linking static SDL
