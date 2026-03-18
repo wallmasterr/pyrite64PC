@@ -1,6 +1,7 @@
 # Generic build files
 *.z64
 build
+build-pc
 filesystem
 *.blend1
 

@@ -325,6 +325,7 @@ void Editor::Scene::draw()
       {
         if(ImGui::MenuItem(ICON_MDI_HAMMER " Build"))Actions::call(Actions::Type::PROJECT_BUILD);
         if(ImGui::MenuItem(ICON_MDI_PLAY " Build & Run"))Actions::call(Actions::Type::PROJECT_BUILD, "run");
+        if(ImGui::MenuItem(ICON_MDI_MONITOR " Build for PC (GLES2)"))Actions::call(Actions::Type::PROJECT_BUILD_PC);
         if(ImGui::MenuItem("Clean"))Actions::call(Actions::Type::PROJECT_CLEAN);
         ImGui::EndMenu();
       }

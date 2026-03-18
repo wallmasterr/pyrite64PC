@@ -26,7 +26,8 @@ namespace Build
   bool buildPrefabAssets(Project::Project &project, SceneCtx &sceneCtx);
   bool buildNodeGraphAssets(Project::Project &project, SceneCtx &sceneCtx);
 
-  bool buildProject(const std::string &path);
+  bool buildProject(const std::string &path, bool runN64Make = true);
+  bool buildProjectPC(const std::string &configPath);
 
   struct CleanArgs
   {

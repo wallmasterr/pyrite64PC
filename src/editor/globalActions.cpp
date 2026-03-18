@@ -150,6 +150,35 @@ namespace Editor::Actions
       return true;
     });
 
+    registerAction(Type::PROJECT_BUILD_PC, [](const std::string&) {
+      if (ctx.isBuildOrRunning()) return false;
+      if (!ctx.project) return false;
+
+      ImGui::SetWindowFocus("Log");
+
+      ctx.project->save();
+      ctx.editorScene->save();
+
+      ctx.futureBuildRun = std::async(std::launch::async, [](std::string configPath) {
+        bool result = false;
+        try {
+          result = Build::buildProjectPC(configPath);
+        } catch (const std::exception &e) {
+          auto error = "PC build failed: " + std::string(e.what());
+          Utils::Logger::log(error, Utils::Logger::LEVEL_ERROR);
+          Editor::Noti::add(Editor::Noti::Type::ERROR, error);
+          return;
+        }
+        if (!result) {
+          Editor::Noti::add(Editor::Noti::Type::ERROR, "PC build failed!");
+        } else {
+          Editor::Noti::add(Editor::Noti::Type::INFO, "PC build (GLES2) finished.");
+        }
+      }, ctx.project->getConfigPath());
+
+      return true;
+    });
+
     registerAction(Type::ASSETS_RELOAD, [](const std::string&) {
       if(ctx.project) {
         ctx.project->getAssets().reload();

@@ -50,7 +50,7 @@ void Build::SceneCtx::addAsset(const Project::AssetManagerEntry &entry)
   stringOffset += entry.romPath.size() + 1;
 }
 
-bool Build::buildProject(const std::string &configPath)
+bool Build::buildProject(const std::string &configPath, bool runN64Make)
 {
   Project::Project project{configPath};
   auto path = project.getPath();
@@ -228,14 +228,97 @@ bool Build::buildProject(const std::string &configPath)
   }
 
   // Build
-  bool success = sceneCtx.toolchain.runCmdSyncLogged("make -C \"" + path + "\" -j8");
+  bool success = true;
+  if (runN64Make) {
+    success = sceneCtx.toolchain.runCmdSyncLogged("make -C \"" + path + "\" -j8");
+  }
 
   if(success) {
-    Utils::Logger::log("Build done!");
+    Utils::Logger::log(runN64Make ? "Build done!" : "Project data ready for PC build.");
   } else {
     Utils::Logger::log("Build failed!", Utils::Logger::LEVEL_ERROR);
   }
   return success;
+}
+
+bool Build::buildProjectPC(const std::string &configPath)
+{
+#if !defined(_WIN32)
+  Utils::Logger::log("Build for PC is currently supported on Windows only.", Utils::Logger::LEVEL_ERROR);
+  return false;
+#else
+  if (!buildProject(configPath, false)) {
+    return false;
+  }
+
+  Project::Project project{configPath};
+  auto path = project.getPath();
+  fs::path buildPcDir = fs::path{path} / "build-pc";
+  fs::create_directories(buildPcDir);
+
+  // Resolve pyrite64 root (editor executable's directory or repo root when run from build)
+  fs::path pyrite64Root = Utils::Proc::getAppResourcePath();
+  if (pyrite64Root.empty() || !fs::exists(pyrite64Root / "data")) {
+    pyrite64Root = Utils::Proc::getSelfPath().parent_path();
+  }
+  for (int i = 0; i < 5 && !fs::exists(pyrite64Root / "data" / "build" / "CMakeLists.pc.template"); ++i) {
+    if (pyrite64Root.has_parent_path())
+      pyrite64Root = pyrite64Root.parent_path();
+    else
+      break;
+  }
+  if (!fs::exists(pyrite64Root / "data" / "build" / "CMakeLists.pc.template")) {
+    Utils::Logger::log("PC build template not found. Ensure data/build/CMakeLists.pc.template exists.", Utils::Logger::LEVEL_ERROR);
+    return false;
+  }
+
+  auto templateStr = Utils::FS::loadTextFile((pyrite64Root / "data" / "build" / "CMakeLists.pc.template").string());
+  auto cmakeLists = Utils::replaceAll(templateStr, {
+    {"{{PYRITE64_ROOT}}", pyrite64Root.generic_string()},
+    {"{{PROJECT_PATH}}",  fs::absolute(path).generic_string()},
+    {"{{ROM_NAME}}",     project.conf.romName},
+    {"{{PROJECT_NAME}}",  project.conf.name},
+  });
+  Utils::FS::saveTextFile((buildPcDir / "CMakeLists.txt").string(), cmakeLists);
+
+  // Prepend MSYS2 toolchain to PATH so cmake/ninja are found when editor is not launched from MSYS2 shell
+  const char* oldPathEnv = std::getenv("PATH");
+  std::string oldPath = oldPathEnv ? oldPathEnv : "";
+  fs::path toolPath;
+  if (fs::exists(fs::path("C:/msys64/ucrt64/bin/cmake.exe")))
+    toolPath = "C:/msys64/ucrt64/bin;C:/msys64/usr/bin";
+  else if (fs::exists(fs::path("C:/msys64/mingw64/bin/cmake.exe")))
+    toolPath = "C:/msys64/mingw64/bin;C:/msys64/usr/bin";
+  if (!toolPath.empty()) {
+    std::string newPath = toolPath.generic_string() + ";" + oldPath;
+    _putenv_s("PATH", newPath.c_str());
+  }
+
+  Utils::Logger::log("Configuring PC build (GLES2)...");
+  std::string configureCmd = "cmake -S \"" + buildPcDir.string() + "\" -B \"" + buildPcDir.string() + "\" -G \"MinGW Makefiles\" -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=mingw32-make";
+  if (!Utils::Proc::runSyncLogged(configureCmd)) {
+    Utils::Logger::log("Trying Ninja...", Utils::Logger::LEVEL_WARN);
+    configureCmd = "cmake -S \"" + buildPcDir.string() + "\" -B \"" + buildPcDir.string() + "\" -G \"Ninja\" -DCMAKE_BUILD_TYPE=Release";
+    if (!Utils::Proc::runSyncLogged(configureCmd)) {
+      Utils::Logger::log("PC configure failed. Install MinGW (msys2/mingw64) or Ninja.", Utils::Logger::LEVEL_ERROR);
+      return false;
+    }
+  }
+
+  Utils::Logger::log("Building PC executable...");
+  std::string buildCmd = "cmake --build \"" + buildPcDir.string() + "\" --config Release";
+  bool success = Utils::Proc::runSyncLogged(buildCmd);
+
+  if (!toolPath.empty())
+    _putenv_s("PATH", oldPath.c_str());
+
+  if (success) {
+    Utils::Logger::log("PC build done! Output in project build-pc/");
+  } else {
+    Utils::Logger::log("PC build failed!", Utils::Logger::LEVEL_ERROR);
+  }
+  return success;
+#endif
 }
 
 bool Build::cleanProject(const Project::Project &project, const CleanArgs &args)
