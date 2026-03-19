@@ -123,14 +123,9 @@ void rdpq_font_free(rdpq_font_t*) {}
 static surface_t s_rdpq_attached = { 0, 320, 240, 320 * 2, nullptr };
 const surface_t* rdpq_get_attached(void) { return &s_rdpq_attached; }
 
-void rdpq_mode_begin(void) {}
-void rdpq_mode_end(void) {}
-void rdpq_mode_push(void) {}
-void rdpq_mode_pop(void) {}
-void rdpq_set_color_image(const surface_t*) {}
-void rdpq_set_z_image(const surface_t*) {}
-/* Store attached color surface so clear/fill can write to PC display buffer */
+/* Store attached color surface and current draw target (set_color_image) - must be before rdpq_set_color_image/rdpq_attach */
 static const surface_t* s_pc_attached_color = nullptr;
+static const surface_t* s_pc_current_color_image = nullptr;
 static uint32_t s_pc_fill_color = 0xFF000000u; /* opaque black */
 /* Pack color for GL RGBA (little-endian: R at low addr). Convert libdragon 0xRRGGBBAA to GL order. */
 static inline uint32_t pc_pack_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
@@ -139,8 +134,16 @@ static inline uint32_t pc_pack_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) 
 static inline uint32_t pc_swap_to_rgba(uint32_t packed) {
   return (packed >> 24) | ((packed >> 8) & 0xFF00) | ((packed << 8) & 0xFF0000) | ((packed << 24) & 0xFF000000);
 }
+
+void rdpq_mode_begin(void) {}
+void rdpq_mode_end(void) {}
+void rdpq_mode_push(void) {}
+void rdpq_mode_pop(void) {}
+void rdpq_set_color_image(const surface_t* surf) { s_pc_current_color_image = surf; }
+void rdpq_set_z_image(const surface_t*) {}
 void rdpq_attach(const surface_t* color, const surface_t*) {
   s_pc_attached_color = color;
+  s_pc_current_color_image = color;
 }
 void rdpq_detach_cb(void (*)(void*), void*) {}
 void rdpq_tex_multi_begin(void) {}
@@ -169,14 +172,14 @@ void __rdpq_set_mode_fill(void) {}
 void __rdpq_set_fill_color(uint32_t packed) { s_pc_fill_color = packed; }
 void __rdpq_fill_rectangle(uint32_t, uint32_t) {}
 void __rdpq_fill_rectangle_offline(int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
-  if (!s_pc_attached_color || !s_pc_attached_color->buffer) return;
+  if (!s_pc_current_color_image || !s_pc_current_color_image->buffer) return;
   int px0 = x0 / 4, py0 = y0 / 4, px1 = x1 / 4, py1 = y1 / 4;
   if (px0 < 0) px0 = 0; if (py0 < 0) py0 = 0;
-  int w = (int)s_pc_attached_color->width, h = (int)s_pc_attached_color->height;
+  int w = (int)s_pc_current_color_image->width, h = (int)s_pc_current_color_image->height;
   if (px1 > w) px1 = w; if (py1 > h) py1 = h;
   if (px0 >= px1 || py0 >= py1) return;
-  int stride = s_pc_attached_color->stride;
-  uint8_t* base = (uint8_t*)s_pc_attached_color->buffer;
+  int stride = s_pc_current_color_image->stride;
+  uint8_t* base = (uint8_t*)s_pc_current_color_image->buffer;
   uint32_t rgba = pc_swap_to_rgba(s_pc_fill_color);
   for (int y = py0; y < py1; y++) {
     uint32_t* row = (uint32_t*)(base + (size_t)y * stride);

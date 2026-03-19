@@ -14,8 +14,9 @@
 extern "C" void p64_pc_trace(const char* step);
 
 namespace {
-  static constexpr int DISPLAY_W = 640;
-  static constexpr int DISPLAY_H = 480;
+  /* Match N64 resolution (display_get_* / scene use 320x240); runtime stretches to window */
+  static constexpr int DISPLAY_W = 320;
+  static constexpr int DISPLAY_H = 240;
   static constexpr int DISPLAY_BPP = 4; /* RGBA8 */
 
   static surface_t s_dummyFb[3];
