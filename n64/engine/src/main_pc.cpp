@@ -19,7 +19,10 @@
 #include "scene/globalState.h"
 #include <array>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
+
+extern "C" void p64_pc_trace(const char* step);
 
 extern "C" void p64_engine_init(void);
 extern "C" void p64_engine_run_frame(float dt);
@@ -38,18 +41,23 @@ namespace {
 
 void p64_engine_init(void)
 {
+  /* Fresh trace file each run; last line = step before crash */
+  { FILE* f = fopen("p64_pc_trace.log", "w"); if (f) fclose(f); }
+  p64_pc_trace("init_start");
   P64::LD::init();
+  p64_pc_trace("LD_init");
   asset_init_compression(2);
   dfs_init(DFS_DEFAULT_LOCATION);
   rdpq_init();
   t3d_init({});
   tpx_init({});
   joypad_init();
+  p64_pc_trace("joypad_init");
 
   P64::AssetManager::init();
+  p64_pc_trace("AssetManager_init");
   P64::AudioManager::init();
-
-  /* N64 VI (video interface) not used on PC; display is handled by SDL. */
+  p64_pc_trace("AudioManager_init");
 
   {
     void* tmp = asset_load("rom:/p64/conf", nullptr);
@@ -58,24 +66,30 @@ void p64_engine_init(void)
       free(tmp);
     }
   }
+  p64_pc_trace("conf_load");
 
   for (uint32_t fontIdx = 0; fontIdx < s_projectConf.autoLoadFonts.size(); fontIdx++) {
     if (s_projectConf.autoLoadFonts[fontIdx] < 0xFFFF) {
       void* font = P64::AssetManager::getByIndex(s_projectConf.autoLoadFonts[fontIdx]);
-      rdpq_text_register_font(fontIdx, (rdpq_font_t*)font);
+      if (font)
+        rdpq_text_register_font(fontIdx, (rdpq_font_t*)font);
     }
   }
+  p64_pc_trace("fonts");
 
   P64::DrawLayer::reset();
   P64::MatrixManager::reset();
   P64::VI::SwapChain::init();
+  p64_pc_trace("SwapChain_init");
 
   P64::GlobalScript::callHooks(P64::GlobalScript::HookType::GAME_INIT);
+  p64_pc_trace("GAME_INIT_hooks");
 
   uint16_t sceneId = (sys_reset_type() == RESET_COLD)
     ? (uint16_t)s_projectConf.sceneIdOnBoot
     : (uint16_t)s_projectConf.sceneIdOnReset;
   P64::SceneManager::load(sceneId);
+  p64_pc_trace("init_done");
 }
 
 void p64_engine_run_frame(float dt)

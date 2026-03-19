@@ -11,6 +11,9 @@
 #include "scene/globalState.h"
 #include "scene/scene.h"
 #include "vi/swapChain.h"
+#ifdef PLATFORM_PC
+extern "C" void p64_pc_trace(const char* step);
+#endif
 
 void P64::RenderPipeline::setupLayer()
 {
@@ -28,11 +31,16 @@ void P64::RenderPipeline::setupLayer()
 
 void P64::RenderPipelineDefault::init()
 {
+#ifdef PLATFORM_PC
+  p64_pc_trace("PipelineDefault_init_start");
+#endif
   tex_format_t fmt = (scene.getConf().flags & SceneConf::FLAG_SCR_32BIT) ? FMT_RGBA32 : FMT_RGBA16;
   for(auto &fb : surfFbColor) {
     fb = surface_alloc(fmt, state.screenSize[0], state.screenSize[1]);
   }
-
+#ifdef PLATFORM_PC
+  p64_pc_trace("PipelineDefault_setDrawPass");
+#endif
   VI::SwapChain::setFrameBuffers(surfFbColor);
 
   VI::SwapChain::setDrawPass([this](surface_t *surf, uint32_t fbIndex, auto done) {

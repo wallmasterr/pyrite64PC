@@ -25,6 +25,9 @@ const char* p64_pc_get_project_path(void);
  */
 void* p64_pc_asset_load(const char* path, unsigned long* size_out);
 
+/** Append one line to p64_pc_trace.log (for crash diagnosis; last line = step before crash). */
+void p64_pc_trace(const char* step);
+
 #ifdef __cplusplus
 }
 #endif

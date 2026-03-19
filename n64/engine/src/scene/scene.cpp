@@ -30,6 +30,10 @@
 #include "scene/componentTable.h"
 #include "script/globalScript.h"
 
+#ifdef PLATFORM_PC
+extern "C" void p64_pc_trace(const char* step);
+#endif
+
 namespace
 {
   uint16_t nextId = 0xFF;
@@ -42,13 +46,28 @@ P64::Scene::Scene(uint16_t sceneId, Scene** ref)
   : id{sceneId}
 {
   if(ref)*ref = this;
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_ctor_start");
+#endif
   Debug::init();
 
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_loadSceneConfig");
+#endif
   loadSceneConfig();
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_AudioManager_init");
+#endif
   P64::AudioManager::init(conf.audioFreq);
 
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_DrawLayer_init");
+#endif
   DrawLayer::init(conf.layerSetup);
 
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_new_pipeline");
+#endif
   switch(conf.pipeline)
   {
     case SceneConf::Pipeline::DEFAULT    : renderPipeline = new RenderPipelineDefault(*this);  break;
@@ -60,6 +79,9 @@ P64::Scene::Scene(uint16_t sceneId, Scene** ref)
   state.screenSize[0] = conf.screenWidth;
   state.screenSize[1] = conf.screenHeight;
 
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_pipeline_init");
+#endif
   renderPipeline->init();
 
 #ifndef PLATFORM_PC
@@ -91,8 +113,14 @@ P64::Scene::Scene(uint16_t sceneId, Scene** ref)
   VI::SwapChain::setFrameSkip(conf.frameSkip);
   VI::SwapChain::start();
 
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_loadScene");
+#endif
   loadScene();
 
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_ctor_done");
+#endif
   Log::info("Scene %d Loaded", getId());
 }
 

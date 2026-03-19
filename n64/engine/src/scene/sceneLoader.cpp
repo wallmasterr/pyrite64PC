@@ -5,8 +5,10 @@
 #include <libdragon.h>
 #include <cstdint>
 #include <malloc.h>
+#include <cstring>
 #include "scene/scene.h"
 #include "lib/math.h"
+#include "lib/logger.h"
 #include "scene/componentTable.h"
 
 namespace {
@@ -57,10 +59,18 @@ void P64::Scene::loadSceneConfig()
   updateScenePath(id);
   scenePath[sizeof(scenePath)-2] = '\0';
 
-  {
-    auto *tmp = (SceneConf*)asset_load(scenePath, nullptr);
-    conf = *tmp;
-    free(tmp);
+  void* raw = asset_load(scenePath, nullptr);
+  if (raw) {
+    conf = *static_cast<SceneConf*>(raw);
+    free(raw);
+  } else {
+    Log::error("Scene config not found: %s (project path may be wrong; pass game project path as first argument)", scenePath);
+    std::memset(&conf, 0, sizeof(conf));
+    conf.pipeline = SceneConf::Pipeline::DEFAULT;
+    conf.screenWidth = 640;
+    conf.screenHeight = 480;
+    conf.audioFreq = 44100;
+    conf.layerSetup.layerCount3D = 1;  /* required: DrawLayer::init asserts layerCount > 0 */
   }
 }
 
@@ -200,17 +210,20 @@ void P64::Scene::loadScene() {
   if(conf.objectCount)
   {
     auto *objFileStart = (uint8_t*)(loadSubFile('o'));
+    if (!objFileStart) {
+      Log::error("Scene object file not found (rom:/p64/s%04u_o). Skipping objects.", id);
+    } else {
+      // now process all other objects
+      auto objFile = objFileStart;
+      for(uint32_t i=0; i<conf.objectCount; ++i) {
+        loadObject(objFile, {}, true);
+      }
 
-    // now process all other objects
-    auto objFile = objFileStart;
-    for(uint32_t i=0; i<conf.objectCount; ++i) {
-      loadObject(objFile, {}, true);
+      // run component init only after all objects are registered in the scene
+      runPendingComponentInit();
+
+      free(objFileStart);
     }
-
-    // run component init only after all objects are registered in the scene
-    runPendingComponentInit();
-
-    free(objFileStart);
   }
 
   // update groups

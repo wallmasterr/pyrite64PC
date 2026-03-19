@@ -30,6 +30,16 @@ const char* p64_pc_get_project_path(void)
     return s_project_path;
 }
 
+void p64_pc_trace(const char* step)
+{
+    FILE* f = fopen("p64_pc_trace.log", "a");
+    if (f) {
+        fputs(step, f);
+        fputc('\n', f);
+        fclose(f);
+    }
+}
+
 static int build_full_path(const char* path, char* out, size_t out_size)
 {
     const char* sub = path;

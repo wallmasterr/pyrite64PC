@@ -10,6 +10,10 @@
 #include "script/globalScript.h"
 #include "vi/swapChain.h"
 
+#ifdef PLATFORM_PC
+extern "C" void p64_pc_trace(const char* step);
+#endif
+
 namespace {
   constinit P64::Scene* currScene{nullptr};
   constinit uint32_t sceneId{0};
@@ -54,14 +58,20 @@ namespace P64::SceneManager
   void runOneFrame(float dt)
   {
     if (nextSceneId != sceneId || !currScene) {
+      p64_pc_trace("frame_unload");
       unload();
+      p64_pc_trace("frame_PRE_LOAD_hooks");
       GlobalScript::callHooks(GlobalScript::HookType::SCENE_PRE_LOAD);
       sceneId = nextSceneId;
+      p64_pc_trace("frame_new_Scene");
       currScene = new P64::Scene(sceneId, &currScene);
+      p64_pc_trace("frame_POST_LOAD_hooks");
       GlobalScript::callHooks(GlobalScript::HookType::SCENE_POST_LOAD);
     }
+    p64_pc_trace("frame_update");
     if (currScene)
       currScene->update(dt);
+    p64_pc_trace("frame_done");
   }
 #endif
 }

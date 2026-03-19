@@ -91,6 +91,8 @@ namespace
   constinit bool isInit{false};
 #ifdef PLATFORM_PC
   constinit void* s_assetBlob{nullptr};
+  /* Fallback when malloc fails so assetTable is never null. */
+  static AssetTable s_emptyTable = {0};
 #endif
 }
 
@@ -99,17 +101,34 @@ void P64::AssetManager::init() {
   isInit = true;
 
 #ifdef PLATFORM_PC
-  s_assetBlob = asset_load("rom:/p64/a", nullptr);
-  const uint32_t count = *(uint32_t*)s_assetBlob;
-  assetTable = (AssetTable*)malloc(sizeof(uint32_t) + count * sizeof(AssetEntry));
-  assetTable->count = count;
-  for (uint32_t i = 0; i < count; ++i) {
-    const char* base = (const char*)s_assetBlob;
-    uint32_t pathOffset = *(const uint32_t*)(base + 4 + i * 8);
-    uint32_t packed = *(const uint32_t*)(base + 4 + i * 8 + 4);
-    assetTable->entries[i].path = base + pathOffset;
-    assetTable->entries[i].packed_ = packed;
-    assetTable->entries[i].data_ = nullptr;
+  int blobSize = 0;
+  s_assetBlob = asset_load("rom:/p64/a", &blobSize);
+  uint32_t count = 0;
+  if (s_assetBlob && blobSize >= 4) {
+    count = *(const uint32_t*)s_assetBlob;
+    /* Avoid OOB read: table needs at least 4 + count*8 bytes. */
+    if (count > 0 && (uint32_t)blobSize < 4 + count * 8u)
+      count = 0;
+    if (count > 65536u)
+      count = 65536u;
+  }
+  size_t allocSize = sizeof(uint32_t) + count * sizeof(AssetEntry);
+  assetTable = (AssetTable*)malloc(allocSize);
+  if (!assetTable) {
+    assetTable = &s_emptyTable;
+    count = 0;
+  } else {
+    assetTable->count = count;
+    if (s_assetBlob && count > 0) {
+      const char* base = (const char*)s_assetBlob;
+      for (uint32_t i = 0; i < count; ++i) {
+        uint32_t pathOffset = *(const uint32_t*)(base + 4 + i * 8);
+        uint32_t packed = *(const uint32_t*)(base + 4 + i * 8 + 4);
+        assetTable->entries[i].path = base + pathOffset;
+        assetTable->entries[i].packed_ = packed;
+        assetTable->entries[i].data_ = nullptr;
+      }
+    }
   }
 #else
   assetTable = (AssetTable*)asset_load("rom:/p64/a", nullptr);
