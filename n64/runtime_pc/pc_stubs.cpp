@@ -129,7 +129,19 @@ void rdpq_mode_push(void) {}
 void rdpq_mode_pop(void) {}
 void rdpq_set_color_image(const surface_t*) {}
 void rdpq_set_z_image(const surface_t*) {}
-void rdpq_attach(const surface_t*, const surface_t*) {}
+/* Store attached color surface so clear/fill can write to PC display buffer */
+static const surface_t* s_pc_attached_color = nullptr;
+static uint32_t s_pc_fill_color = 0xFF000000u; /* opaque black */
+/* Pack color for GL RGBA (little-endian: R at low addr). Convert libdragon 0xRRGGBBAA to GL order. */
+static inline uint32_t pc_pack_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+  return (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16) | ((uint32_t)a << 24);
+}
+static inline uint32_t pc_swap_to_rgba(uint32_t packed) {
+  return (packed >> 24) | ((packed >> 8) & 0xFF00) | ((packed << 8) & 0xFF0000) | ((packed << 24) & 0xFF000000);
+}
+void rdpq_attach(const surface_t* color, const surface_t*) {
+  s_pc_attached_color = color;
+}
 void rdpq_detach_cb(void (*)(void*), void*) {}
 void rdpq_tex_multi_begin(void) {}
 int rdpq_tex_multi_end(void) { return 0; }
@@ -154,9 +166,23 @@ void __rdpq_write8_syncchange(uint32_t, uint32_t, uint32_t, uint32_t) {}
 void __rdpq_write8(uint32_t, uint32_t, uint32_t) {}
 void __rdpq_set_scissor(uint32_t, uint32_t) {}
 void __rdpq_set_mode_fill(void) {}
-void __rdpq_set_fill_color(uint32_t) {}
+void __rdpq_set_fill_color(uint32_t packed) { s_pc_fill_color = packed; }
 void __rdpq_fill_rectangle(uint32_t, uint32_t) {}
-void __rdpq_fill_rectangle_offline(int32_t, int32_t, int32_t, int32_t) {}
+void __rdpq_fill_rectangle_offline(int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
+  if (!s_pc_attached_color || !s_pc_attached_color->buffer) return;
+  int px0 = x0 / 4, py0 = y0 / 4, px1 = x1 / 4, py1 = y1 / 4;
+  if (px0 < 0) px0 = 0; if (py0 < 0) py0 = 0;
+  int w = (int)s_pc_attached_color->width, h = (int)s_pc_attached_color->height;
+  if (px1 > w) px1 = w; if (py1 > h) py1 = h;
+  if (px0 >= px1 || py0 >= py1) return;
+  int stride = s_pc_attached_color->stride;
+  uint8_t* base = (uint8_t*)s_pc_attached_color->buffer;
+  uint32_t rgba = pc_swap_to_rgba(s_pc_fill_color);
+  for (int y = py0; y < py1; y++) {
+    uint32_t* row = (uint32_t*)(base + (size_t)y * stride);
+    for (int x = px0; x < px1; x++) row[x] = rgba;
+  }
+}
 void __rdpq_texture_rectangle_offline(rdpq_tile_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t) {}
 }
 
@@ -310,7 +336,17 @@ void t3d_viewport_attach(T3DViewport*) {}
 void t3d_mat4_look_at(T3DMat4* out, const T3DVec3*, const T3DVec3*, const T3DVec3*) { (void)out; }
 void t3d_fog_set_range(float, float) {}
 void t3d_screen_clear_depth(void) {}
-void t3d_screen_clear_color(color_t) {}
+void t3d_screen_clear_color(color_t c) {
+  if (!s_pc_attached_color || !s_pc_attached_color->buffer) return;
+  uint32_t packed = pc_pack_rgba(c.r, c.g, c.b, c.a);
+  size_t stride = s_pc_attached_color->stride;
+  size_t h = s_pc_attached_color->height;
+  uint8_t* base = (uint8_t*)s_pc_attached_color->buffer;
+  for (size_t y = 0; y < h; y++) {
+    uint32_t* row = (uint32_t*)(base + y * stride);
+    for (int x = 0; x < (int)s_pc_attached_color->width; x++) row[x] = packed;
+  }
+}
 void t3d_anim_attach(void*, void*) {}
 void* t3d_skeleton_create_buffered(void) { return nullptr; }
 void t3d_skeleton_update(void*) {}

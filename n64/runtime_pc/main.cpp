@@ -10,6 +10,7 @@
 #include <SDL3/SDL_opengl.h>
 #include <SDL3/SDL_messagebox.h>
 #include <SDL3/SDL_hints.h>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #ifdef _WIN32
@@ -38,37 +39,74 @@ static void p64_pc_update(float dt) {
     p64_engine_run_frame(dt);
 }
 
-/** Draw a small test triangle (confirms GL render path works). */
-static void p64_pc_draw_test_triangle(void) {
+static GLuint s_displayTex = 0;
+
+/** Upload engine display buffer and draw fullscreen quad. Fallback: clear + triangle. */
+static void p64_pc_draw(void) {
+    unsigned char* buf = NULL;
+    int w = 0, h = 0, stride = 0;
+    p64_pc_get_display_buffer(&buf, &w, &h, &stride);
+
+    if (buf && w > 0 && h > 0) {
+        if (s_displayTex == 0)
+            glGenTextures(1, &s_displayTex);
+        glBindTexture(GL_TEXTURE_2D, s_displayTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        if (stride == w * 4) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)w, (GLsizei)h, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+        } else {
+            /* copy row-by-row if stride != w*4 */
+            unsigned char* row = (unsigned char*)malloc((size_t)(w * 4));
+            if (row) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)w, (GLsizei)h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++)
+                        ((uint32_t*)row)[x] = ((uint32_t*)(buf + (size_t)y * stride))[x];
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, (GLsizei)w, 1, GL_RGBA, GL_UNSIGNED_BYTE, row);
+                }
+                free(row);
+            }
+        }
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, s_displayTex);
+        glDisable(GL_DEPTH_TEST);
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glOrtho(0, 640, 480, 0, -1, 1);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(640.0f, 0.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(640.0f, 480.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 480.0f);
+        glEnd();
+        return;
+    }
+
+    /* Fallback: clear to scene color + test triangle */
+    unsigned char r = 0, g = 0, b = 0, a = 255;
+    p64_pc_get_clear_color_rgba8(&r, &g, &b, &a);
+    if (r == 0 && g == 0 && b == 0) { r = 51; g = 89; b = 128; a = 255; }
+    glClearColor(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0, 640, 480, 0, -1, 1);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    glDisable(GL_TEXTURE_2D);
-    glDisable(GL_DEPTH_TEST);
     glBegin(GL_TRIANGLES);
     glColor3f(1.0f, 0.4f, 0.2f);
     glVertex2f(40.0f, 440.0f);
     glVertex2f(40.0f, 400.0f);
     glVertex2f(80.0f, 420.0f);
     glEnd();
-}
-
-/** Called every frame after update. Clear to scene clear color, draw test shape, then present. */
-static void p64_pc_draw(void) {
-    unsigned char r = 0, g = 0, b = 0, a = 255;
-    p64_pc_get_clear_color_rgba8(&r, &g, &b, &a);
-    /* If scene clear color is black (e.g. config failed to load), use a visible default */
-    if (r == 0 && g == 0 && b == 0) {
-        r = 51;
-        g = 89;
-        b = 128;
-        a = 255;
-    }
-    glClearColor(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    p64_pc_draw_test_triangle();
 }
 
 int main(int argc, char* argv[])

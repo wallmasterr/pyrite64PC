@@ -28,6 +28,7 @@ extern "C" void p64_pc_trace(const char* step);
 
 extern "C" void p64_engine_init(void);
 extern "C" void p64_pc_get_clear_color_rgba8(uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
+extern "C" void p64_pc_get_display_buffer(uint8_t** out_ptr, int* out_w, int* out_h, int* out_stride);
 extern "C" void p64_engine_run_frame(float dt);
 extern "C" void p64_engine_shutdown(void);
 
@@ -121,5 +122,12 @@ void p64_pc_get_clear_color_rgba8(uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a
   *g = c.g;
   *b = c.b;
   *a = c.a;
+}
+
+void p64_pc_get_display_buffer(uint8_t** out_ptr, int* out_w, int* out_h, int* out_stride)
+{
+  if (!out_ptr) return;
+  *out_ptr = nullptr;
+  P64::VI::SwapChain::getDisplayBuffer(out_ptr, out_w, out_h, out_stride);
 }
 #endif

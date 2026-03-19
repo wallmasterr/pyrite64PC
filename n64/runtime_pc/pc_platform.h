@@ -34,6 +34,12 @@ void p64_pc_trace(const char* step);
  */
 void p64_pc_get_clear_color_rgba8(unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a);
 
+/**
+ * Get the engine display buffer (RGBA8, 640x480). Call after p64_engine_run_frame.
+ * If no buffer, out_ptr is set to NULL and dimensions to 0. Non-NULL pointers required.
+ */
+void p64_pc_get_display_buffer(unsigned char** out_ptr, int* out_w, int* out_h, int* out_stride);
+
 #ifdef __cplusplus
 }
 #endif

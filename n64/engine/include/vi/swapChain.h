@@ -30,5 +30,7 @@ namespace P64::VI::SwapChain
 #ifdef PLATFORM_PC
   /** Set delta time for this frame (PC only). Call before runOneFrame. */
   void setPCDeltaTime(float dt);
+  /** Get the display buffer (RGBA8) for blit to window. */
+  void getDisplayBuffer(uint8_t** outPtr, int* outW, int* outH, int* outStride);
 #endif
 }
