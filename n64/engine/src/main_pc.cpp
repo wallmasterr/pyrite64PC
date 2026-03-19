@@ -17,6 +17,8 @@
 #include "renderer/drawLayer.h"
 #include "script/globalScript.h"
 #include "scene/globalState.h"
+#include "scene/scene.h"
+#include "scene/sceneManager.h"
 #include <array>
 #include <cstdlib>
 #include <cstdio>
@@ -25,6 +27,7 @@
 extern "C" void p64_pc_trace(const char* step);
 
 extern "C" void p64_engine_init(void);
+extern "C" void p64_pc_get_clear_color_rgba8(uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
 extern "C" void p64_engine_run_frame(float dt);
 extern "C" void p64_engine_shutdown(void);
 
@@ -102,5 +105,21 @@ void p64_engine_run_frame(float dt)
 void p64_engine_shutdown(void)
 {
   (void)0; /* TODO: SceneManager::unload when exposed for PC */
+}
+
+void p64_pc_get_clear_color_rgba8(uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a)
+{
+  if (!r || !g || !b || !a) return;
+  P64::Scene* sc = P64::SceneManager::getCurrentSceneOrNull();
+  if (!sc) {
+    *r = *g = *b = 0;
+    *a = 255;
+    return;
+  }
+  color_t c = sc->getConf().clearColor;
+  *r = c.r;
+  *g = c.g;
+  *b = c.b;
+  *a = c.a;
 }
 #endif

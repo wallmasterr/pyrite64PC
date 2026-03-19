@@ -28,6 +28,12 @@ void* p64_pc_asset_load(const char* path, unsigned long* size_out);
 /** Append one line to p64_pc_trace.log (for crash diagnosis; last line = step before crash). */
 void p64_pc_trace(const char* step);
 
+/**
+ * Get the current scene clear color (RGBA 0-255). Call after p64_engine_run_frame.
+ * If no scene is loaded, writes 0,0,0,255. Pointers must be non-NULL.
+ */
+void p64_pc_get_clear_color_rgba8(unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a);
+
 #ifdef __cplusplus
 }
 #endif

@@ -38,10 +38,37 @@ static void p64_pc_update(float dt) {
     p64_engine_run_frame(dt);
 }
 
-/** Called every frame after update. Clear + present (engine draw is stubbed for now). */
+/** Draw a small test triangle (confirms GL render path works). */
+static void p64_pc_draw_test_triangle(void) {
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, 640, 480, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
+    glBegin(GL_TRIANGLES);
+    glColor3f(1.0f, 0.4f, 0.2f);
+    glVertex2f(40.0f, 440.0f);
+    glVertex2f(40.0f, 400.0f);
+    glVertex2f(80.0f, 420.0f);
+    glEnd();
+}
+
+/** Called every frame after update. Clear to scene clear color, draw test shape, then present. */
 static void p64_pc_draw(void) {
-    glClearColor(0.15f, 0.2f, 0.25f, 1.0f);
+    unsigned char r = 0, g = 0, b = 0, a = 255;
+    p64_pc_get_clear_color_rgba8(&r, &g, &b, &a);
+    /* If scene clear color is black (e.g. config failed to load), use a visible default */
+    if (r == 0 && g == 0 && b == 0) {
+        r = 51;
+        g = 89;
+        b = 128;
+        a = 255;
+    }
+    glClearColor(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    p64_pc_draw_test_triangle();
 }
 
 int main(int argc, char* argv[])

@@ -73,5 +73,7 @@ namespace P64::SceneManager
       currScene->update(dt);
     p64_pc_trace("frame_done");
   }
+
+  Scene* getCurrentSceneOrNull() { return currScene; }
 #endif
 }

@@ -1,5 +1,6 @@
 /**
  * PC implementation of SwapChain: dummy framebuffers and delta time from host.
+ * Stores and invokes the draw pass in drain() so scene.draw() runs each frame.
  */
 #ifdef PLATFORM_PC
 #include "vi/swapChain.h"
@@ -7,11 +8,15 @@
 #include <libdragon.h>
 #include <cstdint>
 #include <cstring>
+#include <exception>
+
+extern "C" void p64_pc_trace(const char* step);
 
 namespace {
   static surface_t s_dummyFb[3];
   static float s_deltaTime = 1.0f / 60.0f;
   static bool s_deltaTimeSet = false;
+  static P64::VI::SwapChain::RenderPassDrawTask s_drawTask{nullptr};
 }
 
 namespace P64::VI::SwapChain
@@ -33,15 +38,29 @@ namespace P64::VI::SwapChain
     }
     s_deltaTime = 1.0f / 60.0f;
     s_deltaTimeSet = false;
+    s_drawTask = nullptr;
   }
 
   void setVBlank(bool) {}
   float getDeltaTime() { return s_deltaTime; }
   float getFPS() { return 60.0f; }
   void nextFrame() {}
-  void drain() {}
+  void drain() {
+    if (!s_drawTask) return;
+    p64_pc_trace("drain_start");
+    surface_t* fb = getFrameBuffer(0);
+    try {
+      s_drawTask(fb, 0, [](uint32_t) {});
+    } catch (const std::exception& e) {
+      (void)e;
+      p64_pc_trace("drain_exception");
+    } catch (...) {
+      p64_pc_trace("drain_unknown");
+    }
+    p64_pc_trace("drain_done");
+  }
   void setFrameSkip(uint32_t) {}
-  void setDrawPass(RenderPassDrawTask) {}
+  void setDrawPass(RenderPassDrawTask task) { s_drawTask = std::move(task); }
   void start() {}
   void setFrameBuffers(surface_t*) {}
   surface_t *getFrameBuffer(uint32_t idx) {

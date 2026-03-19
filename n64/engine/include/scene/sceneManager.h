@@ -32,5 +32,7 @@ namespace P64::SceneManager
 #ifdef PLATFORM_PC
   /** Run one frame (load scene if needed, then one update). */
   void runOneFrame(float dt);
+  /** Current scene pointer or nullptr if none (PC only, for clear color etc.). */
+  Scene* getCurrentSceneOrNull();
 #endif
 }

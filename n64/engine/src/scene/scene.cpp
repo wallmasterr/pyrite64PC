@@ -246,6 +246,9 @@ void P64::Scene::update(float deltaTime)
 
 void P64::Scene::draw([[maybe_unused]] float deltaTime)
 {
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_draw_start");
+#endif
   ticksDraw = get_ticks();
 
   GlobalScript::callHooks(GlobalScript::HookType::SCENE_PRE_DRAW);
@@ -314,6 +317,9 @@ void P64::Scene::draw([[maybe_unused]] float deltaTime)
   renderPipeline->draw();
   ticksDraw = get_ticks() - ticksDraw;
 
+#ifdef PLATFORM_PC
+  p64_pc_trace("Scene_draw_end");
+#endif
 #if RSPQ_PROFILE && !defined(PLATFORM_PC)
   rspq_profile_next_frame();
   if(++frameCount == 30) {
