@@ -1,0 +1,177 @@
+/**
+ * Minimal fgeom.h for PC build when libdragon does not provide it.
+ * Defines float geometry types and C API used by the engine and tiny3d.
+ */
+#ifndef FGEOM_H
+#define FGEOM_H
+
+#include <math.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+  union { struct { float x, y; }; float v[2]; };
+} fm_vec2_t;
+typedef struct {
+  union { struct { float x, y, z; }; float v[3]; };
+} fm_vec3_t;
+typedef struct {
+  union { struct { float x, y, z, w; }; float v[4]; };
+} fm_vec4_t;
+typedef struct {
+  union { struct { float x, y, z, w; }; float v[4]; };
+} fm_quat_t;
+typedef struct { float m[4][4]; } fm_mat4_t;
+
+static inline float fm_vec2_dot(const fm_vec2_t *a, const fm_vec2_t *b) {
+  return a->x * b->x + a->y * b->y;
+}
+static inline void fm_vec3_sub(fm_vec3_t *res, const fm_vec3_t *a, const fm_vec3_t *b) {
+  res->x = a->x - b->x; res->y = a->y - b->y; res->z = a->z - b->z;
+}
+static inline void fm_vec3_cross(fm_vec3_t *res, const fm_vec3_t *a, const fm_vec3_t *b) {
+  res->x = a->y * b->z - a->z * b->y;
+  res->y = a->z * b->x - a->x * b->z;
+  res->z = a->x * b->y - a->y * b->x;
+}
+static inline void fm_vec3_norm(fm_vec3_t *res, const fm_vec3_t *v) {
+  float len = sqrtf(v->x*v->x + v->y*v->y + v->z*v->z);
+  float inv = (len > 1e-8f) ? (1.0f / len) : 0.0f;
+  res->x = v->x * inv; res->y = v->y * inv; res->z = v->z * inv;
+}
+static inline float fm_vec3_len(const fm_vec3_t *v) {
+  return sqrtf(v->x*v->x + v->y*v->y + v->z*v->z);
+}
+/* Linear interpolation: a + (b - a) * t. Used by Player.cpp. */
+static inline float fm_lerp(float a, float b, float t) {
+  return a + (b - a) * t;
+}
+/* Component-wise lerp: res = a + (b - a) * t (res may alias a or b). Used by Player.cpp. */
+static inline void fm_vec3_lerp(fm_vec3_t *res, const fm_vec3_t *a, const fm_vec3_t *b, float t) {
+  res->x = a->x + (b->x - a->x) * t;
+  res->y = a->y + (b->y - a->y) * t;
+  res->z = a->z + (b->z - a->z) * t;
+}
+static inline void fm_quat_inverse(fm_quat_t *res, const fm_quat_t *q) {
+  /* conjugate for unit quaternion */
+  res->x = -q->x; res->y = -q->y; res->z = -q->z; res->w = q->w;
+}
+/* Axis-angle to quaternion (axis assumed normalized); used by user scripts (e.g. EnemyKrud, Seesaw). */
+static inline void fm_quat_from_axis_angle(fm_quat_t *res, const fm_vec3_t *axis, float angle_rad) {
+  float half = angle_rad * 0.5f;
+  float s = sinf(half);
+  float c = cosf(half);
+  res->x = axis->x * s;
+  res->y = axis->y * s;
+  res->z = axis->z * s;
+  res->w = c;
+}
+/* Normalize quaternion (res may equal q). */
+static inline void fm_quat_norm(fm_quat_t *res, const fm_quat_t *q) {
+  float len = sqrtf(q->x*q->x + q->y*q->y + q->z*q->z + q->w*q->w);
+  float inv = (len > 1e-8f) ? (1.0f / len) : 0.0f;
+  res->x = q->x * inv;
+  res->y = q->y * inv;
+  res->z = q->z * inv;
+  res->w = q->w * inv;
+}
+/* Quaternion multiply: res = a * b. */
+static inline void fm_quat_mul(fm_quat_t *res, const fm_quat_t *a, const fm_quat_t *b) {
+  fm_quat_t r;
+  r.w = a->w*b->w - a->x*b->x - a->y*b->y - a->z*b->z;
+  r.x = a->w*b->x + a->x*b->w + a->y*b->z - a->z*b->y;
+  r.y = a->w*b->y - a->x*b->z + a->y*b->w + a->z*b->x;
+  r.z = a->w*b->z + a->x*b->y - a->y*b->x + a->z*b->w;
+  *res = r;
+}
+/* Rotate quaternion q by angle (rad) around axis and store in res (res may equal q). Used by Goal.cpp. */
+static inline void fm_quat_rotate(fm_quat_t *res, const fm_quat_t *q, const fm_vec3_t *axis, float angle_rad) {
+  fm_quat_t delta;
+  fm_quat_from_axis_angle(&delta, axis, angle_rad);
+  fm_quat_mul(res, q, &delta);
+}
+
+/* Quaternion from Euler angles in ZYX order (x_rad, y_rad, z_rad) = (pitch, yaw, roll). Used by ObjHead.cpp. */
+static inline void fm_quat_from_euler_zyx(fm_quat_t *res, float x_rad, float y_rad, float z_rad) {
+  float cx = cosf(x_rad * 0.5f), sx = sinf(x_rad * 0.5f);
+  float cy = cosf(y_rad * 0.5f), sy = sinf(y_rad * 0.5f);
+  float cz = cosf(z_rad * 0.5f), sz = sinf(z_rad * 0.5f);
+  fm_quat_t qx = { sx, 0.0f, 0.0f, cx };
+  fm_quat_t qy = { 0.0f, sy, 0.0f, cy };
+  fm_quat_t qz = { 0.0f, 0.0f, sz, cz };
+  fm_quat_t qyqz;
+  fm_quat_mul(&qyqz, &qy, &qz);
+  fm_quat_mul(res, &qx, &qyqz);
+}
+
+/* Quaternion from Euler angles (radians) in XYZ order; euler[0]=x, euler[1]=y, euler[2]=z. Matches tiny3d t3d_quat_from_euler. Used by Player.cpp. */
+static inline void fm_quat_from_euler(fm_quat_t *res, const float euler[3]) {
+  float c1 = cosf(euler[0] * 0.5f), s1 = sinf(euler[0] * 0.5f);
+  float c2 = cosf(euler[1] * 0.5f), s2 = sinf(euler[1] * 0.5f);
+  float c3 = cosf(euler[2] * 0.5f), s3 = sinf(euler[2] * 0.5f);
+  res->x = c1 * c2 * s3 - s1 * s2 * c3;
+  res->y = s1 * c2 * c3 - c1 * s2 * s3;
+  res->z = c1 * s2 * c3 + s1 * c2 * s3;
+  res->w = c1 * c2 * c3 + s1 * s2 * s3;
+}
+
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef __cplusplus
+/* C++ operators for engine (e.g. collision/shapes.h) */
+static inline fm_vec3_t operator+(const fm_vec3_t& a, const fm_vec3_t& b) {
+  fm_vec3_t r; r.x = a.x + b.x; r.y = a.y + b.y; r.z = a.z + b.z; return r;
+}
+static inline fm_vec3_t operator-(const fm_vec3_t& a, const fm_vec3_t& b) {
+  fm_vec3_t r; r.x = a.x - b.x; r.y = a.y - b.y; r.z = a.z - b.z; return r;
+}
+static inline fm_vec3_t operator*(const fm_vec3_t& v, float s) {
+  fm_vec3_t r; r.x = v.x * s; r.y = v.y * s; r.z = v.z * s; return r;
+}
+static inline fm_vec3_t operator*(float s, const fm_vec3_t& v) {
+  fm_vec3_t r; r.x = v.x * s; r.y = v.y * s; r.z = v.z * s; return r;
+}
+static inline fm_vec3_t operator*(const fm_vec3_t& a, const fm_vec3_t& b) {
+  fm_vec3_t r; r.x = a.x * b.x; r.y = a.y * b.y; r.z = a.z * b.z; return r;
+}
+static inline fm_vec3_t operator/(const fm_vec3_t& v, float s) {
+  float inv = (s != 0.0f) ? (1.0f / s) : 0.0f;
+  fm_vec3_t r; r.x = v.x * inv; r.y = v.y * inv; r.z = v.z * inv; return r;
+}
+static inline fm_vec3_t operator/(const fm_vec3_t& a, const fm_vec3_t& b) {
+  fm_vec3_t r;
+  r.x = (b.x != 0.0f) ? (a.x / b.x) : 0.0f;
+  r.y = (b.y != 0.0f) ? (a.y / b.y) : 0.0f;
+  r.z = (b.z != 0.0f) ? (a.z / b.z) : 0.0f;
+  return r;
+}
+static inline fm_vec3_t& operator+=(fm_vec3_t& a, const fm_vec3_t& b) {
+  a.x += b.x; a.y += b.y; a.z += b.z; return a;
+}
+static inline fm_vec3_t& operator-=(fm_vec3_t& a, const fm_vec3_t& b) {
+  a.x -= b.x; a.y -= b.y; a.z -= b.z; return a;
+}
+static inline fm_vec3_t& operator*=(fm_vec3_t& a, const fm_vec3_t& b) {
+  a.x *= b.x; a.y *= b.y; a.z *= b.z; return a;
+}
+static inline fm_vec3_t& operator*=(fm_vec3_t& v, float s) {
+  v.x *= s; v.y *= s; v.z *= s; return v;
+}
+/* rotate vector by quaternion: q * v */
+static inline fm_vec3_t operator*(const fm_quat_t& q, const fm_vec3_t& v) {
+  float tx = 2.0f * (q.y * v.z - q.z * v.y);
+  float ty = 2.0f * (q.z * v.x - q.x * v.z);
+  float tz = 2.0f * (q.x * v.y - q.y * v.x);
+  fm_vec3_t r;
+  r.x = v.x + q.w * tx + (q.y * tz - q.z * ty);
+  r.y = v.y + q.w * ty + (q.z * tx - q.x * tz);
+  r.z = v.z + q.w * tz + (q.x * ty - q.y * tx);
+  return r;
+}
+#endif
+
+#endif

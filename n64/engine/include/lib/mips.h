@@ -2,6 +2,7 @@
 * @copyright 2025 - Max Bebök
 * @license MIT
 */
+#include <cstdint>
 #include <libdragon.h>
 
 namespace MIPS
@@ -36,6 +37,6 @@ namespace MIPS
   }
 
   constexpr uint32_t JUMP(void* address) {
-    return J_TYPE(0b000010, ((uint32_t)address & 0x00FFFFFF) >> 2);
+    return J_TYPE(0b000010, ((uint32_t)((uintptr_t)address & 0x00FFFFFF)) >> 2);
   }
 }

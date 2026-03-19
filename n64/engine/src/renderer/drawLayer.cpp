@@ -18,7 +18,9 @@ namespace
 {
   struct Layer
   {
-    #ifdef LIBDRAGON_LAYERS
+    #ifdef PLATFORM_PC
+      void* queue{};  /* RSP queues not used on PC */
+    #elif defined(LIBDRAGON_LAYERS)
       rspq_queue_t *queue{};
     #else
       volatile uint32_t *pointer{};
@@ -53,8 +55,10 @@ void P64::DrawLayer::init(Setup &setup)
   layers = {};
   layers.resize(layerCount-1);
 
-  #ifdef LIBDRAGON_LAYERS
-    Log::info("DrawLayer count: %d", layers.size());
+  #ifdef PLATFORM_PC
+    Log::info("DrawLayer count: %d (PC: no RSP queues)", (int)layers.size());
+  #elif defined(LIBDRAGON_LAYERS)
+    Log::info("DrawLayer count: %d", (int)layers.size());
     for(auto &layer : layers)
     {
       for(auto &l : layer) {
@@ -92,7 +96,9 @@ void P64::DrawLayer::use(uint32_t idx)
 {
   if(idx == currLayerIdx)return;
 
-  #ifdef LIBDRAGON_LAYERS
+  #ifdef PLATFORM_PC
+    (void)idx;
+  #elif defined(LIBDRAGON_LAYERS)
     rspq_queue_switch(idx == 0 ? nullptr : layers[idx-1][frameIdx].queue);
   #else
     if(idx == 0)
@@ -151,11 +157,10 @@ void P64::DrawLayer::draw(uint32_t layerIdx)
 
   auto &layer = layers[layerIdx-1];
 
-  #ifdef LIBDRAGON_LAYERS
-    //debugf("Draw-Layer: %lu, frame: %lu\n", layerIdx-1, frameIdx);
-    //rspq_queue_debug(layer[frameIdx].queue);
+  #ifdef PLATFORM_PC
+    (void)layer;
+  #elif defined(LIBDRAGON_LAYERS)
     rspq_queue_run(layer[frameIdx].queue);
-    //rspq_wait();
   #else
     //uint32_t sizeWord = layer[frameIdx].current - layer[frameIdx].pointer;
     //debugf("Usage Layer %lu: %lu/%d words\n", layerIdx-1, sizeWord, layer[frameIdx].sentinel - layer[frameIdx].pointer);
@@ -214,7 +219,9 @@ void P64::DrawLayer::nextFrame()
   frameIdx = (frameIdx + 1) % LAYER_BUFFER_COUNT;
   currLayerIdx = 0;
 
-  #ifdef LIBDRAGON_LAYERS
+  #ifdef PLATFORM_PC
+    (void)0;
+  #elif defined(LIBDRAGON_LAYERS)
     for(auto &layer : layers) {
       rspq_queue_clear(layer[frameIdx].queue);
     }
@@ -227,7 +234,11 @@ void P64::DrawLayer::nextFrame()
 
 void P64::DrawLayer::reset()
 {
-  #ifdef LIBDRAGON_LAYERS
+  #ifdef PLATFORM_PC
+    for(auto &layer : layers)
+      for(auto &l : layer)
+        l.queue = nullptr;
+  #elif defined(LIBDRAGON_LAYERS)
     for(auto &layer : layers)
     {
       for(auto &l : layer) {

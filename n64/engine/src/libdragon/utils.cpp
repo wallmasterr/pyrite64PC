@@ -3,13 +3,16 @@
 * @license MIT
 */
 #include "utils.h"
-#include "lib/mips.h"
 #include "vi/swapChain.h"
 
 extern "C" {
   // "libdragon/system_internal.h"
   void* sbrk_top(int incr);
 }
+
+#ifndef PLATFORM_PC
+#include <cstdint>
+#include "lib/mips.h"
 
 namespace
 {
@@ -34,9 +37,9 @@ namespace
   {
     uint32_t* instrPtr = (uint32_t*)UncachedAddr(fn);
 
-    instrPtr[0] = MIPS::LUI(MIPS::REG::A0, (uint32_t)fnName >> 16);
+    instrPtr[0] = MIPS::LUI(MIPS::REG::A0, (uint32_t)(uintptr_t)fnName >> 16);
     instrPtr[1] = MIPS::JUMP((void*)notAllowedFn);
-    instrPtr[2] = MIPS::ORI(MIPS::REG::A0, MIPS::REG::A0, (uint32_t)fnName & 0xFFFF);
+    instrPtr[2] = MIPS::ORI(MIPS::REG::A0, MIPS::REG::A0, (uint32_t)(uintptr_t)fnName & 0xFFFF);
   }
 
   void replaceFunction(auto *fnOld, auto *fnNew)
@@ -49,9 +52,14 @@ namespace
 }
 
 #define DISABLE_FN(fn) disableFunction((void*)fn, #fn)
+#endif /* !PLATFORM_PC */
 
 void P64::LD::init()
 {
+#ifdef PLATFORM_PC
+  (void)0; /* no-op on PC */
+  return;
+#else
   // some functions cannot be used since other systems are in place.
   // For example the entire engine uses VI, but libdragon still has display functions.
   // if a user decides to call e.g. display_get_width(), it would return wrong values.
@@ -64,10 +72,15 @@ void P64::LD::init()
   DISABLE_FN(display_get_num_buffers);
   DISABLE_FN(display_get_current_framebuffer);
   DISABLE_FN(display_get_zbuf);
+#endif
 }
 
 void* P64::LD::sbrkSetTop(void* newTop)
 {
+#ifdef PLATFORM_PC
+  (void)newTop;
+  return nullptr;
+#endif
   void* currentTop = sbrk_top(0);
   int32_t diff = (char*)currentTop - (char*)newTop;
   void* result = sbrk_top(diff);

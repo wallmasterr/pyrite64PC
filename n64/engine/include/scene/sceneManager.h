@@ -28,4 +28,9 @@ namespace P64::SceneManager
    * @return scene, never NULL
    */
   Scene &getCurrent();
+
+#ifdef PLATFORM_PC
+  /** Run one frame (load scene if needed, then one update). */
+  void runOneFrame(float dt);
+#endif
 }

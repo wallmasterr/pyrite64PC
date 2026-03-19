@@ -4,6 +4,10 @@
 */
 #include "renderer/particles/ptxSystem.h"
 #include "lib/matrixManager.h"
+#ifdef PLATFORM_PC
+#include <cstdlib>
+#include <cstring>
+#endif
 
 P64::PTX::System::System(Type ptxType, uint32_t maxSize)
   : countMax{maxSize}, count{0}, type{ptxType}
@@ -11,14 +15,24 @@ P64::PTX::System::System(Type ptxType, uint32_t maxSize)
   assert(sizeof(countMax) % 2 == 0);
   if(countMax > 0) {
     std::size_t allocSize = countMax * sizeof(TPXParticle) / 2;
+#ifdef PLATFORM_PC
+    particles = std::malloc(allocSize);
+    if (particles) std::memset(particles, 0, allocSize);
+#else
     particles = malloc_uncached(allocSize);
     sys_hw_memset(particles, 0, allocSize);
+#endif
   }
 }
 
 P64::PTX::System::~System() {
   if(particles) {
+#ifdef PLATFORM_PC
+    std::free(particles);
+    particles = nullptr;
+#else
     free_uncached(particles);
+#endif
   }
 }
 

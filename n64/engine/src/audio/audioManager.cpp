@@ -2,6 +2,10 @@
 * @copyright 2024 - Max Bebök
 * @license MIT
 */
+#ifdef PLATFORM_PC
+#include <pc_compat.h>
+extern "C" void mixer_try_play(void);
+#endif
 #include "audio/audioManager.h"
 #include "lib/logger.h"
 #include "audioManagerPrivate.h"

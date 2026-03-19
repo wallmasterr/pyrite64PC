@@ -3,6 +3,10 @@
 * @license MIT
 */
 #pragma once
+#ifdef PLATFORM_PC
+#include <cstddef>
+#include <cstring>
+#endif
 #include <libdragon.h>
 
 namespace P64::Mem
@@ -34,6 +38,11 @@ namespace P64::Mem
   int32_t getHeapDiff();
 
   inline void clearSurface(surface_t &surf) {
+#ifdef PLATFORM_PC
+    if (surf.buffer)
+      memset(surf.buffer, 0, (size_t)surf.height * surf.stride);
+#else
     sys_hw_memset64(surf.buffer, 0, surf.height * surf.stride);
+#endif
   }
 }

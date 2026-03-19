@@ -2,6 +2,7 @@
 * @copyright 2025 - Max Bebök
 * @license MIT
 */
+#include <cstdint>
 #include "renderer/pipelineHDRBloom.h"
 #include "../debug/overlay.h"
 #include "hdr/rspHDR.h"
@@ -52,7 +53,7 @@ void P64::RenderPipelineHDRBloom::init()
     fb = surf;
     scene.draw(VI::SwapChain::getDeltaTime());
     Debug::Overlay::draw(scene, surf);
-    rdpq_detach_cb((void(*)(void*))((void*)done), (void*)fbIndex);
+    rdpq_detach_cb((void(*)(void*))((void*)done), (void*)(uintptr_t)fbIndex);
   });
 }
 

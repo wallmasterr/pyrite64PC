@@ -105,12 +105,19 @@ P64::Object* P64::Scene::loadObject(uint8_t* &objFile, std::function<void(Object
 
   //debugf("Allocating object %d | comps: %d | size: %lu bytes\n", objEntry->id, compCount, allocSize);
 
-  void* objMem = memalign(DATA_ALIGN, allocSize); // @TODO: custom allocator
+  void* objMem;
+#ifdef PLATFORM_PC
+  objMem = malloc(allocSize);
+  if(objMem) memset(objMem, 0, allocSize);
+#else
+  objMem = memalign(DATA_ALIGN, allocSize); // @TODO: custom allocator
   if(allocSize < 16) {
     memset(objMem, 0, allocSize);
   } else {
     sys_hw_memset(objMem, 0, allocSize);
   }
+#endif
+  if(!objMem) { ptrIn = nullptr; return nullptr; }
 
   auto objCompTablePtr = (Object::CompRef*)((char*)objMem + sizeof(Object));
   auto objCompDataPtr = (char*)(objCompTablePtr) + offsetData;

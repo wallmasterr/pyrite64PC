@@ -9,11 +9,55 @@ if(WIN32)
 endif()
 add_subdirectory(${PYRITE64_ROOT}/vendored/SDL ${CMAKE_BINARY_DIR}/SDL EXCLUDE_FROM_ALL)
 
-set(PCRT_PLATFORM_SOURCES main.cpp pc_platform.c)
+# Engine static library for PC (PLATFORM_PC, no main.cpp / swapChain.cpp; use main_pc + swapChain_pc)
+set(ENGINE_DIR ${PYRITE64_ROOT}/n64/engine)
+file(GLOB ENGINE_SOURCES
+  "${ENGINE_DIR}/src/*.cpp"
+  "${ENGINE_DIR}/src/vi/*.cpp"
+  "${ENGINE_DIR}/src/lib/*.cpp"
+  "${ENGINE_DIR}/src/scene/*.cpp"
+  "${ENGINE_DIR}/src/audio/*.cpp"
+  "${ENGINE_DIR}/src/assets/*.cpp"
+  "${ENGINE_DIR}/src/collision/*.cpp"
+  "${ENGINE_DIR}/src/debug/*.cpp"
+  "${ENGINE_DIR}/src/scene/components/*.cpp"
+  "${ENGINE_DIR}/src/renderer/*.cpp"
+  "${ENGINE_DIR}/src/renderer/hdr/*.cpp"
+  "${ENGINE_DIR}/src/renderer/bigtex/*.cpp"
+  "${ENGINE_DIR}/src/renderer/particles/*.cpp"
+  "${ENGINE_DIR}/src/script/*.cpp"
+  "${ENGINE_DIR}/src/libdragon/*.cpp"
+)
+list(FILTER ENGINE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
+list(FILTER ENGINE_SOURCES EXCLUDE REGEX ".*/swapChain\\.cpp$")
+list(APPEND ENGINE_SOURCES
+  "${ENGINE_DIR}/src/main_pc.cpp"
+  "${ENGINE_DIR}/src/vi/swapChain_pc.cpp"
+)
+add_library(p64_engine STATIC ${ENGINE_SOURCES})
+target_compile_definitions(p64_engine PRIVATE PLATFORM_PC)
+target_include_directories(p64_engine PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${ENGINE_DIR}/include ${ENGINE_DIR}/src
+  ${PYRITE64_ROOT}/vendored/libdragon/include
+  ${PYRITE64_ROOT}/vendored/tiny3d/src
+)
+set_property(TARGET p64_engine PROPERTY CXX_STANDARD 20)
+
+set(PCRT_PLATFORM_SOURCES main.cpp pc_platform.c pc_stubs.cpp)
 add_executable(p64_pc_runtime ${PCRT_PLATFORM_SOURCES})
-set_target_properties(p64_pc_runtime PROPERTIES OUTPUT_NAME "${P64_ROM_NAME}_pc")
-target_include_directories(p64_pc_runtime PRIVATE ${PYRITE64_ROOT}/vendored/SDL/include ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(p64_pc_runtime PRIVATE SDL3::SDL3)
+set_target_properties(p64_pc_runtime PROPERTIES OUTPUT_NAME "${P64_ROM_NAME}_pc" CXX_STANDARD 20)
+target_compile_definitions(p64_pc_runtime PRIVATE P64_PROJECT_PATH="${P64_PROJECT_PATH}" PLATFORM_PC)
+# Ensure all sources (including project user scripts) see PC stubs (e.g. rdpq_get_attached)
+target_compile_options(p64_pc_runtime PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-include ${CMAKE_CURRENT_SOURCE_DIR}/include/pc_compat.h>)
+target_include_directories(p64_pc_runtime PRIVATE
+  ${PYRITE64_ROOT}/vendored/SDL/include
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PYRITE64_ROOT}/vendored/libdragon/include
+  ${PYRITE64_ROOT}/vendored/tiny3d/src
+)
+target_link_libraries(p64_pc_runtime PRIVATE SDL3::SDL3 p64_engine)
 if(WIN32)
   # Match SDL's Windows link libs so video/events/ole etc. resolve when linking static SDL
   target_link_libraries(p64_pc_runtime PRIVATE

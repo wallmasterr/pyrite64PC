@@ -3,6 +3,9 @@
 * @license MIT
 */
 #pragma once
+#ifdef PLATFORM_PC
+#include <pc_compat.h>
+#endif
 #include <libdragon.h>
 
 // libdragon overloads:

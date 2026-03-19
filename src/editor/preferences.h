@@ -3,6 +3,7 @@
 * @license MIT
 */
 #pragma once
+#include <string>
 #include "keymap.h"
 
 namespace Editor
@@ -20,6 +21,7 @@ namespace Editor
     bool useVSync = false;
     int fpsLimit = 60;
     bool showRotAsEuler = false;
+    std::string lastProjectPath{};
 
     void load();
     void save();

@@ -26,4 +26,9 @@ namespace P64::VI::SwapChain
 
   surface_t *getFrameBuffer(uint32_t idx);
   void setFrameBuffers(surface_t buffers[3]);
+
+#ifdef PLATFORM_PC
+  /** Set delta time for this frame (PC only). Call before runOneFrame. */
+  void setPCDeltaTime(float dt);
+#endif
 }

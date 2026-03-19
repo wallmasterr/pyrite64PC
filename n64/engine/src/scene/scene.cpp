@@ -5,7 +5,9 @@
 #include "scene/scene.h"
 
 #include <libdragon.h>
+#ifndef PLATFORM_PC
 #include <rspq_profile.h>
+#endif
 #include <t3d/t3d.h>
 
 #include "scene/scene.h"
@@ -31,7 +33,7 @@
 namespace
 {
   uint16_t nextId = 0xFF;
-#if RSPQ_PROFILE
+#if RSPQ_PROFILE && !defined(PLATFORM_PC)
   uint32_t frameCount = 0;
 #endif
 }
@@ -60,6 +62,7 @@ P64::Scene::Scene(uint16_t sceneId, Scene** ref)
 
   renderPipeline->init();
 
+#ifndef PLATFORM_PC
   switch(conf.filter)
   {
     case FILTERS_DISABLED: default:
@@ -83,6 +86,7 @@ P64::Scene::Scene(uint16_t sceneId, Scene** ref)
       vi_set_aa_mode(VI_AA_MODE_RESAMPLE_FETCH_ALWAYS);
     break;
   }
+#endif
 
   VI::SwapChain::setFrameSkip(conf.frameSkip);
   VI::SwapChain::start();
@@ -282,7 +286,7 @@ void P64::Scene::draw([[maybe_unused]] float deltaTime)
   renderPipeline->draw();
   ticksDraw = get_ticks() - ticksDraw;
 
-#if RSPQ_PROFILE
+#if RSPQ_PROFILE && !defined(PLATFORM_PC)
   rspq_profile_next_frame();
   if(++frameCount == 30) {
     rspq_profile_dump();

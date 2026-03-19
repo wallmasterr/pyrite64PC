@@ -44,7 +44,7 @@ namespace P64::Script::CFEEDEA8CF251F94
   void update(Object& obj, Data *data, float deltaTime)
   {
     // always draw sprite...
-    uint16_t seed = (uint32_t)data;
+    uint16_t seed = (uint16_t)(uintptr_t)data;
     User::Sprites::coin->add(obj.pos, seed);
 
     // check player X/Z distance for shadow

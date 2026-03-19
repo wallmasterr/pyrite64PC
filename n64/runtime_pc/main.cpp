@@ -29,17 +29,19 @@ static void showError(const char* title, const char* msg) {
 #endif
 }
 
-/** Called every frame with delta time in seconds. Plug engine update here (step 3). */
+extern "C" void p64_engine_init(void);
+extern "C" void p64_engine_run_frame(float dt);
+extern "C" void p64_engine_shutdown(void);
+
+/** Called every frame with delta time in seconds. Runs engine update. */
 static void p64_pc_update(float dt) {
-    (void)dt;
-    /* No-op until engine is wired in. */
+    p64_engine_run_frame(dt);
 }
 
-/** Called every frame after update. Do all rendering and present. Plug engine draw here (step 3). */
+/** Called every frame after update. Clear + present (engine draw is stubbed for now). */
 static void p64_pc_draw(void) {
     glClearColor(0.15f, 0.2f, 0.25f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    /* Placeholder until engine/rendering is wired in. */
 }
 
 int main(int argc, char* argv[])
@@ -94,7 +96,8 @@ int main(int argc, char* argv[])
     }
 
     printf("Project path: %s\n", projectPath);
-    printf("OpenGL context created. Game loop running (delta time + update/draw). Close window or ESC to exit.\n");
+    p64_engine_init();
+    printf("Engine inited. Game loop running. Close window or ESC to exit.\n");
 
     /* Game loop: delta time from SDL, then update(dt) and draw() each frame. */
     Uint64 lastTicks = SDL_GetTicks();
@@ -120,6 +123,7 @@ int main(int argc, char* argv[])
         SDL_GL_SwapWindow(window);
     }
 
+    p64_engine_shutdown();
     SDL_GL_DestroyContext(gl);
     SDL_DestroyWindow(window);
     SDL_Quit();

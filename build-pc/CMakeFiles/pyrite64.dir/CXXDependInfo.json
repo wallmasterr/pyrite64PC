@@ -1,0 +1,625 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "GNU",
+	"compiler-simulate-id" : "",
+	"config" : "Release",
+	"cxx-modules" : {},
+	"database-info" : null,
+	"dir-cur-bld" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/build-pc",
+	"dir-cur-src" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC",
+	"dir-top-bld" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/build-pc",
+	"dir-top-src" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : 
+	[
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\imgui",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\IconFontCppHeaders",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\SHA256\\include",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\ImGuiTextSelect",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\ImViewGuizmo",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\ImNodeFlow\\include",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\glm",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\ImGuizmo",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\tiny3d\\tools\\gltf_importer\\src\\lib",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\libdragon",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\SDL_shadercross\\include",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\n64",
+		"vendored\\SDL\\include-revision",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\SDL\\include",
+		"C:\\Users\\PC\\Documents\\GitHub\\pyrite64PC\\pyrite64PC\\vendored\\SDL_image\\include"
+	],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/build-pc/CMakeFiles/pyrite64.dir",
+	"sources" : 
+	{
+		"CMakeFiles/pyrite64.dir/src/build/audioBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/audioBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/collisionBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/collisionBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/fontBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/fontBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/nodeGraphBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/nodeGraphBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/prefabBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/prefabBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/projectBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/projectBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/sceneBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/sceneBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/scriptBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/scriptBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/t3dmBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/t3dmBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/textureBuilder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/textureBuilder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/build/tools/bci.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/build/tools/bci.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/cli.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/cli.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/actions.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/actions.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/globalActions.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/globalActions.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/imgui/helper.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/imgui/helper.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/imgui/notification.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/imgui/notification.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/imgui/theme.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/imgui/theme.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/keymap.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/keymap.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/editorScene.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/editorScene.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/launcher.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/launcher.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/assetInspector.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/assetInspector.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/assets/modelEditor.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/assets/modelEditor.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/assetsBrowser.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/assetsBrowser.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/createProjectOverlay.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/createProjectOverlay.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/layerInspector.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/layerInspector.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/logWindow.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/logWindow.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/memoryDashboard.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/memoryDashboard.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/nodeEditor.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/nodeEditor.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/objectInspector.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/objectInspector.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/preferenceOverlay.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/preferenceOverlay.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/projectSettings.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/projectSettings.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/sceneGraph.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/sceneGraph.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/sceneInspector.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/sceneInspector.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/toolchainOverlay.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/toolchainOverlay.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/pages/parts/viewport3D.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/pages/parts/viewport3D.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/preferences.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/preferences.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/selectionUtils.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/selectionUtils.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/undoRedo.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/undoRedo.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/editor/window.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/editor/window.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/main.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/main.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/assetManager.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/assetManager.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/assets/collision.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/assets/collision.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/components.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/components.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/shared/material.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/shared/material.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/shared/meshFilter.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/shared/meshFilter.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compAnimModel.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compAnimModel.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compAudio2d.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compAudio2d.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compCamera.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compCamera.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compCode.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compCode.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compCollBody.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compCollBody.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compCollMesh.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compCollMesh.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compConstraint.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compConstraint.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compCulling.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compCulling.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compLight.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compLight.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compModel.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compModel.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/component/types/compNodeGraph.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/component/types/compNodeGraph.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/graph/graph.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/graph/graph.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/project.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/project.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/scene/object.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/scene/object.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/scene/prefab.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/scene/prefab.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/scene/scene.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/scene/scene.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/project/scene/sceneManager.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/project/scene/sceneManager.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/camera.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/camera.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/framebuffer.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/framebuffer.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/mesh.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/mesh.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/n64/n64Material.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/n64/n64Material.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/n64Mesh.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/n64Mesh.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/object.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/object.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/pipeline.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/pipeline.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/scene.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/scene.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/shader.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/shader.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/texture.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/texture.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/renderer/vertBuffer.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/renderer/vertBuffer.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/codeParser.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/codeParser.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/filePicker.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/filePicker.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/fs.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/fs.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/hash.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/hash.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/logger.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/logger.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/meshGen.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/meshGen.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/network.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/network.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/proc.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/proc.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/prop.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/prop.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/time.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/time.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/toolchain.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/toolchain.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/src/utils/updater.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/src/utils/updater.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/ImGuizmo/ImGuizmo.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/ImGuizmo/ImGuizmo.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/ImNodeFlow/src/ImNodeFlow.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/ImNodeFlow/src/ImNodeFlow.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/SHA256/src/SHA256.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/SHA256/src/SHA256.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/imgui/backends/imgui_impl_sdl3.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/imgui/backends/imgui_impl_sdl3.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/imgui/backends/imgui_impl_sdlgpu3.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/imgui/backends/imgui_impl_sdlgpu3.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/imgui/imgui.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/imgui/imgui.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/imgui/imgui_draw.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/imgui/imgui_draw.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/imgui/imgui_tables.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/imgui/imgui_tables.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/imgui/imgui_widgets.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/imgui/imgui_widgets.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/imgui/misc/cpp/imgui_stdlib.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/imgui/misc/cpp/imgui_stdlib.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/converter/animConverter.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/converter/animConverter.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/converter/meshConverter.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/converter/meshConverter.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/lodepng.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/lodepng.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/allocator.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/allocator.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/indexcodec.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/indexcodec.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/indexgenerator.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/indexgenerator.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/simplifier.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/simplifier.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/spatialorder.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/spatialorder.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/stripifier.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/stripifier.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/vcacheanalyzer.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/vcacheanalyzer.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/vcacheoptimizer.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/meshopt/vcacheoptimizer.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/tristrip/connectivity_graph.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/tristrip/connectivity_graph.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/tristrip/policy.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/tristrip/policy.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/lib/tristrip/tri_stripper.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/lib/tristrip/tri_stripper.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/optimizer/meshBVH.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/optimizer/meshBVH.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/optimizer/meshOptimizer.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/optimizer/meshOptimizer.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/parser.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/parser.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/parser/animParser.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/parser/animParser.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/parser/boneParser.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/parser/boneParser.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/parser/materialParser.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/parser/materialParser.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/parser/nodeParser.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/parser/nodeParser.cpp"
+		},
+		"CMakeFiles/pyrite64.dir/vendored/tiny3d/tools/gltf_importer/src/writer.cpp.obj" : 
+		{
+			"language" : "CXX",
+			"source" : "C:/Users/PC/Documents/GitHub/pyrite64PC/pyrite64PC/vendored/tiny3d/tools/gltf_importer/src/writer.cpp"
+		}
+	}
+}

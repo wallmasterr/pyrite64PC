@@ -2,6 +2,9 @@
 * @copyright 2024 - Max Bebök
 * @license MIT
 */
+#ifdef PLATFORM_PC
+#include <cstdlib>
+#endif
 #include "lib/matrixManager.h"
 #include "lib/logger.h"
 #include "lib/types.h"
@@ -18,8 +21,12 @@ namespace {
 }
 
 void P64::MatrixManager::reset() {
+#ifdef PLATFORM_PC
+  bufferPtr = (T3DMat4FP*)buffer;
+#else
   data_cache_hit_writeback(buffer, sizeof(buffer));
-  bufferPtr = unached(buffer);
+  bufferPtr = (T3DMat4FP*)UncachedAddr(buffer);
+#endif
   laseIndex = 0;
   memset(usedFlags, 0, sizeof(usedFlags));
 }
@@ -42,12 +49,20 @@ T3DMat4FP *P64::MatrixManager::alloc(uint32_t count) {
   }
 
   // if we fail to alloc a new mat, fallback to the slower generic malloc
+#ifdef PLATFORM_PC
+  return (T3DMat4FP*)malloc(sizeof(T3DMat4FP) * count);
+#else
   return (T3DMat4FP*)malloc_uncached(sizeof(T3DMat4FP) * count);
+#endif
 }
 
 void P64::MatrixManager::free(T3DMat4FP *mat, uint32_t count) {
   if(mat > &bufferPtr[MATRIX_COUNT]) {
+#ifdef PLATFORM_PC
+    std::free(mat);
+#else
     free_uncached(mat);
+#endif
     return;
   }
 

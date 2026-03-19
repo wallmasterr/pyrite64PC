@@ -38,22 +38,32 @@ void P64::NodeGraph::Instance::load(uint16_t assetIdx)
 {
   asset = assetIdx;
   graphDef = (GraphDef*)AssetManager::getByIndex(asset);
+#ifdef PLATFORM_PC
+  corot = nullptr;  /* NodeGraph coroutines not supported on PC */
+#else
   debugf("Stack-size: %d %d\n", asset, graphDef->stackSize);
   corot = coro_create(graphDef->func, this, graphDef->stackSize*2);
+#endif
 }
 
 P64::NodeGraph::Instance::~Instance()
 {
+#ifndef PLATFORM_PC
   if(corot) {
     coro_destroy(corot);
     corot = nullptr;
   }
+#endif
 }
 
 bool P64::NodeGraph::Instance::update(float deltaTime) {
   //debugf("Instance::update: %p\n", corot);
   if(!corot)return false;
 
+#ifdef PLATFORM_PC
+  (void)deltaTime;
+  return false;  /* NodeGraph coroutines not supported on PC */
+#else
   //auto t = get_ticks();
   //disable_interrupts();
   coro_resume(corot);
@@ -68,6 +78,7 @@ bool P64::NodeGraph::Instance::update(float deltaTime) {
     return false;
   }
   return true;
+#endif
 }
 
 void P64::NodeGraph::registerFunction(uint32_t strCRC32, UserFunc fn)

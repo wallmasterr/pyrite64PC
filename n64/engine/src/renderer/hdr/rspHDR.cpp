@@ -3,6 +3,7 @@
 * @license MIT
 */
 #include "rspHDR.h"
+#include <cstdint>
 #include <libdragon.h>
 
 extern "C" {
@@ -50,9 +51,9 @@ void RspHDR::hdrBlit(void* rgba32In, void *rgba16Out, void* rgba32BloomIn, float
 {
   uint32_t factorInt = (uint32_t)(factor * 0xFFFF);
   rspq_write_4(rspIdFX, CMD_HDR_BLIT,
-     (uint32_t)rgba32In & 0xFFFFFF,
-     (uint32_t)rgba16Out & 0xFFFFFF,
-     (uint32_t)rgba32BloomIn & 0xFFFFFF,
+     (uint32_t)(uintptr_t)rgba32In & 0xFFFFFF,
+     (uint32_t)(uintptr_t)rgba16Out & 0xFFFFFF,
+     (uint32_t)(uintptr_t)rgba32BloomIn & 0xFFFFFF,
      factorInt
   );
 }
@@ -60,8 +61,8 @@ void RspHDR::hdrBlit(void* rgba32In, void *rgba16Out, void* rgba32BloomIn, float
 void RspHDR::downscale(void* rgba32In, void* rgba32Out)
 {
   rspq_write_2(rspIdFX, CMD_DOWN_SCALE,
-     (uint32_t)rgba32In & 0xFFFFFF,
-     (uint32_t)rgba32Out & 0xFFFFFF
+     (uint32_t)(uintptr_t)rgba32In & 0xFFFFFF,
+     (uint32_t)(uintptr_t)rgba32Out & 0xFFFFFF
   );
 }
 
@@ -74,8 +75,8 @@ void RspHDR::blur(void* rgba32In, void* rgba32Out, float brightness, float thres
   factors |= (uint32_t)(brightness * quantFactor) & 0xFFFF;
 
   rspq_write_3(rspIdFX, CMD_BLUR,
-    (uint32_t)rgba32In & 0xFFFFFF,
-    ((uint32_t)rgba32Out - BLUR_STRIDE) & 0xFFFFFF,
+    (uint32_t)(uintptr_t)rgba32In & 0xFFFFFF,
+    ((uint32_t)(uintptr_t)rgba32Out - BLUR_STRIDE) & 0xFFFFFF,
     factors
   );
 }

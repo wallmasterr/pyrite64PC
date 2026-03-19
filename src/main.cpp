@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <SDL3/SDL.h>
 #include <future>
+#include <filesystem>
 
 #include <argparse/argparse.hpp>
 
@@ -281,10 +282,18 @@ int main(int argc, char** argv)
     ctx.editorScene = std::make_unique<Editor::Scene>();
 
     ctx.prefs.load();
-    if(!CLI::getProjectPath().empty())
-    {
-      if(!Editor::Actions::call(Editor::Actions::Type::PROJECT_OPEN, CLI::getProjectPath())) {
-        Editor::Noti::add(Editor::Noti::Type::ERROR, "Failed to open project from command line!");
+    std::string pathToOpen;
+    if (!CLI::getProjectPath().empty()) {
+      pathToOpen = CLI::getProjectPath();
+    } else if (!ctx.prefs.lastProjectPath.empty()) {
+      auto path = std::filesystem::path(ctx.prefs.lastProjectPath);
+      if (std::filesystem::exists(path)) {
+        pathToOpen = path.string();
+      }
+    }
+    if (!pathToOpen.empty()) {
+      if (!Editor::Actions::call(Editor::Actions::Type::PROJECT_OPEN, pathToOpen)) {
+        Editor::Noti::add(Editor::Noti::Type::ERROR, "Failed to open project!");
       }
     }
 

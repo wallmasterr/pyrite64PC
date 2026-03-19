@@ -48,4 +48,20 @@ namespace P64::SceneManager
     GlobalScript::callHooks(GlobalScript::HookType::SCENE_POST_UNLOAD);
     currScene = nullptr;
   }
+
+#ifdef PLATFORM_PC
+  /** Run one frame (PC build): load scene if needed, then one update(dt). */
+  void runOneFrame(float dt)
+  {
+    if (nextSceneId != sceneId || !currScene) {
+      unload();
+      GlobalScript::callHooks(GlobalScript::HookType::SCENE_PRE_LOAD);
+      sceneId = nextSceneId;
+      currScene = new P64::Scene(sceneId, &currScene);
+      GlobalScript::callHooks(GlobalScript::HookType::SCENE_POST_LOAD);
+    }
+    if (currScene)
+      currScene->update(dt);
+  }
+#endif
 }

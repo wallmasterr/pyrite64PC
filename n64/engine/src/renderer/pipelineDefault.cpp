@@ -2,6 +2,7 @@
 * @copyright 2025 - Max Bebök
 * @license MIT
 */
+#include <cstdint>
 #include "../debug/overlay.h"
 #include "renderer/pipeline.h"
 #include "debug/debugDraw.h"
@@ -42,7 +43,7 @@ void P64::RenderPipelineDefault::init()
     scene.draw(VI::SwapChain::getDeltaTime());
 
     Debug::Overlay::draw(scene, surf);
-    rdpq_detach_cb((void(*)(void*))((void*)done), (void*)fbIndex);
+    rdpq_detach_cb((void(*)(void*))((void*)done), (void*)(uintptr_t)fbIndex);
   });
 }
 

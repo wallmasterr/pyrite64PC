@@ -37,6 +37,11 @@ void Editor::Preferences::load()
     useVSync = doc.value("useVSync", DEF.useVSync);
     fpsLimit = doc.value("fpsLimit", DEF.fpsLimit);
     showRotAsEuler = doc.value("showRotAsEuler", DEF.showRotAsEuler);
+    if (doc.contains("lastProjectPath") && doc["lastProjectPath"].is_string()) {
+      lastProjectPath = doc["lastProjectPath"].get<std::string>();
+      while (!lastProjectPath.empty() && (lastProjectPath.back() == ' ' || lastProjectPath.back() == '\t' || lastProjectPath.back() == '\r' || lastProjectPath.back() == '\n'))
+        lastProjectPath.pop_back();
+    }
   } else {
     applyKeymapPreset();
   }
@@ -56,6 +61,7 @@ void Editor::Preferences::save()
     .set("useVSync", useVSync)
     .set("fpsLimit", fpsLimit)
     .set("showRotAsEuler", showRotAsEuler)
+    .set("lastProjectPath", lastProjectPath)
     .toString();
   auto prefPath = getPrefsPath();
   printf("Saving prefs to %s\n", prefPath.c_str());

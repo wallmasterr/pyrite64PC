@@ -5,6 +5,7 @@
 #include "actions.h"
 
 #include <unordered_set>
+#include <filesystem>
 #include "../project/project.h"
 #include "../editor/imgui/notification.h"
 #include "../utils/logger.h"
@@ -37,6 +38,12 @@ namespace Editor::Actions
          Editor::Noti::add(Editor::Noti::Type::ERROR, error);
          ctx.project = nullptr;
          return false;
+       }
+       if (ctx.project) {
+         std::error_code ec;
+         auto absPath = std::filesystem::absolute(std::filesystem::path(path), ec);
+         ctx.prefs.lastProjectPath = ec ? path : absPath.string();
+         ctx.prefs.save();
        }
        return ctx.project != nullptr;
      });

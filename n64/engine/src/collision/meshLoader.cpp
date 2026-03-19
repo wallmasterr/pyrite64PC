@@ -2,6 +2,7 @@
 * @copyright 2024 - Max Bebök
 * @license MIT
 */
+#include <cstdint>
 #include "collision/mesh.h"
 #include "collision/bvh.h"
 
@@ -11,7 +12,7 @@ namespace {
  }
 
    static void debugDrawBVTreeNode(
-    const int16_t *data, uint32_t basePtr,
+    const int16_t *data, uintptr_t basePtr,
     const P64::Coll::BVHNode *node, int level
   ) {
     int dataCount = node->value & 0b1111;
@@ -36,7 +37,7 @@ namespace {
 
   [[maybe_unused]] static void debugDrawBVTree(const P64::Coll::BVH *bvh) {
     const int16_t *data = (int16_t*)&bvh->nodes[bvh->nodeCount]; // data starts right after nodes
-    uint32_t basePtr = (uint32_t)(char*)bvh;
+    uintptr_t basePtr = (uintptr_t)(char*)bvh;
     debugDrawBVTreeNode(data, basePtr, bvh->nodes, 0);
   }
 }

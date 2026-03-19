@@ -3,6 +3,10 @@
 * @license MIT
 */
 #include "renderer/pipelineBigTex.h"
+#include <cstdint>
+#ifdef PLATFORM_PC
+#include <cstring>
+#endif
 
 #include "bigtex/bigtex.h"
 #include "bigtex/memory.h"
@@ -39,10 +43,18 @@ void P64::RenderPipelineBigTex::init()
 
   // clear buffers to avoid garbage on the first 2 frames (since it's out of phase)
   for(auto &fb : fbs.color) {
+#ifdef PLATFORM_PC
+    if (fb.buffer) std::memset(fb.buffer, 0, fb.height * fb.stride);
+#else
     sys_hw_memset(fb.buffer, 0, fb.height * fb.stride);
+#endif
   }
   for(auto &fb : fbs.uv) {
+#ifdef PLATFORM_PC
+    if (fb.buffer) std::memset(fb.buffer, 0, fb.height * fb.stride);
+#else
     sys_hw_memset(fb.buffer, 0, fb.height * fb.stride);
+#endif
   }
 
   /*
@@ -58,7 +70,7 @@ void P64::RenderPipelineBigTex::init()
     rdpq_attach(surfColor, surfDepth);
     scene.draw(VI::SwapChain::getDeltaTime());
     Debug::Overlay::draw(scene, surfColor);
-    rdpq_detach_cb((void(*)(void*))((void*)done), (void*)fbIndex);
+    rdpq_detach_cb((void(*)(void*))((void*)done), (void*)(uintptr_t)fbIndex);
   });
 }
 
@@ -120,8 +132,8 @@ void P64::RenderPipelineBigTex::draw()
       uint32_t stepSizeTexIn = quarterSlice * 2;
       uint32_t stepSizeTexInRSP = quarterSlice * 1;
 
-      uint32_t ptrInPos = (uint32_t)(texIn);
-      uint32_t ptrOutPos = (uint32_t) CachedAddr(surfColor->buffer);
+      uint32_t ptrInPos = (uint32_t)(uintptr_t)(texIn);
+      uint32_t ptrOutPos = (uint32_t)(uintptr_t)CachedAddr(surfColor->buffer);
 
       // version without shading, this is the same as above without the RDP tasks inbetween
       stepSizeTexIn =  FB_SIZE_IN / SHADE_BLEND_SLICES;
@@ -134,7 +146,9 @@ void P64::RenderPipelineBigTex::draw()
           rspq_flush();
         } else {
           BigTex_applyTexture(ptrInPos, ptrInPos + stepSizeTexIn, ptrOutPos);
+#ifndef PLATFORM_PC
           data_cache_hit_writeback_invalidate((char*)CachedAddr(ptrOutPos + stepSizeTexIn/2) - 0x1000, 0x1000);
+#endif
         }
 
         ptrOutPos += stepSizeTexIn / 2;

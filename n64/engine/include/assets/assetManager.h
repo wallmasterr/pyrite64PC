@@ -4,6 +4,7 @@
 */
 #pragma once
 #include <libdragon.h>
+#include <cstdint>
 #include <string>
 
 namespace P64::AssetManager
@@ -36,8 +37,8 @@ namespace P64
      */
     T* get()
     {
-      if((uint32_t)ptr < 0xFFFF) {
-        ptr = (T*)AssetManager::getByIndex((uint32_t)ptr);
+      if (static_cast<uintptr_t>(reinterpret_cast<uintptr_t>(ptr)) < 0xFFFFu) {
+        ptr = (T*)AssetManager::getByIndex(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(ptr)));
       }
       return ptr;
     }

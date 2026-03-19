@@ -16,7 +16,9 @@ namespace P64::Renderer::BigTex
 
     while(fbTexIn < fbTexInEnd)
     {
+#ifndef PLATFORM_PC
       asm("cache %0,(%1)\n"::"i" (((0x3 << 2) | 0x1)), "r" (fbOut64));
+#endif
 
       for(uint32_t i=0; i<4; ++i) {
         uint8_t u0 = ((uint8_t*)fbTexIn)[1];
@@ -56,7 +58,9 @@ namespace P64::Renderer::BigTex
 
     while(fbTexIn < fbTexInEnd)
     {
+#ifndef PLATFORM_PC
       asm("cache %0,(%1)\n"::"i" (((0x3 << 2) | 0x1)), "r" (fbOut64));
+#endif
 
       for(uint32_t i=0; i<4; ++i) {
         uint8_t mat0 = ((uint8_t*)fbTexIn)[0] - 0x40;
