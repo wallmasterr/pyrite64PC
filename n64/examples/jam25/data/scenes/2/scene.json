@@ -1,5 +1,6 @@
 {
   "conf": {
+    "audioFreq": 32000,
     "clearColor": [
       0.0,
       0.0,
@@ -13,6 +14,12 @@
     "fbWidth": 320,
     "filter": 1,
     "frameLimit": 1,
+    "gravity": [
+      0.0,
+      -1.5679999589920044,
+      0.0
+    ],
+    "interpolatePhysicsTransforms": true,
     "layers2D": [
       {
         "blender": 0,
@@ -28,6 +35,7 @@
         "fogColorMode": 0,
         "fogMax": 0.0,
         "fogMin": 0.0,
+        "lightMode": 0,
         "name": "2D"
       }
     ],
@@ -46,6 +54,7 @@
         "fogColorMode": 0,
         "fogMax": 0.0,
         "fogMin": 0.0,
+        "lightMode": 0,
         "name": "3D Opaque"
       },
       {
@@ -62,6 +71,7 @@
         "fogColorMode": 0,
         "fogMax": 0.0,
         "fogMin": 0.0,
+        "lightMode": 0,
         "name": "3D Transp."
       }
     ],
@@ -80,11 +90,16 @@
         "fogColorMode": 0,
         "fogMax": 0.0,
         "fogMin": 0.0,
+        "lightMode": 0,
         "name": "PTX Opaque"
       }
     ],
     "name": "Menu",
-    "renderPipeline": 2
+    "physicsTickRate": 50,
+    "positionSolverIterations": 6,
+    "renderPipeline": 2,
+    "velocitySolverIterations": 7,
+    "visualUnitsPerMeter": 100.0
   },
   "graph": {
     "children": [
@@ -96,6 +111,7 @@
               "aspect": 0.0,
               "far": 1000.0,
               "fov": 75.0,
+              "mode": 0,
               "near": 10.0,
               "vpOffset": [
                 0,
@@ -113,12 +129,13 @@
           {
             "data": {
               "color": [
-                0.0,
-                0.0,
-                0.0,
-                0.4745098054409027
+                1.0,
+                1.0,
+                1.0,
+                1.0
               ],
               "index": 0,
+              "size": 50.0,
               "type": 0
             },
             "id": 2,
@@ -151,7 +168,10 @@
             "data": {
               "asset": 632490924792972403,
               "autoRun": false,
-              "repeatable": true
+              "objRefs": {
+                "0": 2325492290
+              },
+              "varDefaults": {}
             },
             "id": 9,
             "name": "Node Graph",
@@ -159,7 +179,6 @@
           }
         ],
         "enabled": true,
-        "id": 1,
         "name": "Cam",
         "pos": [
           10.0,
@@ -167,6 +186,7 @@
           310.0
         ],
         "propOverrides": {},
+        "proportionalScale": false,
         "rot": [
           0.0,
           0.0,
@@ -254,14 +274,14 @@
           }
         ],
         "enabled": true,
-        "id": 2,
         "name": "Skybox",
         "pos": [
-          -108.45944213867188,
+          -110.0,
           0.0,
-          -536.9998779296875
+          -540.0
         ],
         "propOverrides": {},
+        "proportionalScale": false,
         "rot": [
           -0.4877363443374634,
           -0.5450246930122375,
@@ -348,7 +368,6 @@
           }
         ],
         "enabled": true,
-        "id": 3,
         "name": "Head",
         "pos": [
           0.0,
@@ -356,6 +375,7 @@
           -2433.409423828125
         ],
         "propOverrides": {},
+        "proportionalScale": false,
         "rot": [
           0.0,
           0.0,
@@ -374,7 +394,6 @@
     ],
     "components": [],
     "enabled": true,
-    "id": 0,
     "name": "Scene",
     "pos": [
       0.0,
@@ -382,6 +401,7 @@
       0.0
     ],
     "propOverrides": {},
+    "proportionalScale": false,
     "rot": [
       0.0,
       0.0,

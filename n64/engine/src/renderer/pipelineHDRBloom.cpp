@@ -52,7 +52,7 @@ void P64::RenderPipelineHDRBloom::init()
     rdpq_attach(surf, surfDepth);
     fb = surf;
     scene.draw(VI::SwapChain::getDeltaTime());
-    Debug::Overlay::draw(scene, surf);
+    Debug::Overlay::draw(surf);
     rdpq_detach_cb((void(*)(void*))((void*)done), (void*)(uintptr_t)fbIndex);
   });
 }
@@ -94,14 +94,10 @@ void P64::RenderPipelineHDRBloom::draw()
   assert(fb != nullptr);
   auto surfBlur = postProc[frameIdxLast].applyEffects(*fb);
 
-  rdpq_sync_pipe();
   rdpq_set_color_image(fb);
 
   if(DEBUG_BLOOM)
   {
-    rdpq_sync_tile();
-    rdpq_sync_load();
-
     rdpq_set_mode_standard();
     rdpq_mode_combiner(RDPQ_COMBINER_TEX);
     rdpq_mode_blender(0);

@@ -4,6 +4,7 @@
 */
 #include "scene.h"
 #include "object.h"
+#include <functional>
 #include "../../utils/json.h"
 #include "../../context.h"
 #include "../../utils/hash.h"
@@ -12,13 +13,36 @@
 
 #define __LIBDRAGON_N64SYS_H 1
 #define PhysicalAddr(a) (uint64_t)(a)
-#include "../graph/nodes/nodeObjDel.h"
+#include "../graph/nodes/baseNode.h"
 #include "include/rdpq_macros.h"
 #include "include/rdpq_mode.h"
 
 namespace
 {
   constexpr float DEF_MODEL_SCALE = 1.0f;
+
+  /**
+   * Checks whether a target object belongs to the subtree of a given ancestor.
+   *
+   * @param allegedDescendant Object to check if is a descendant.
+   * @param allegedAncestorUUID UUID of the node that may be an ancestor of target.
+   * @return True when target is the ancestor itself or one of its descendants.
+   */
+  bool isDescendantOf(const Project::Object* allegedDescendant, uint32_t allegedAncestorUUID)
+  {
+    const Project::Object* current = allegedDescendant;
+
+    // Walk from the target up to the root looking for the ancestor UUID
+    while (current) {
+      // Found the ancestor in the parent chain
+      if (current->uuid == allegedAncestorUUID)
+        return true;
+      // Jump up to the parent
+      current = current->parent;
+    }
+    // Reached the root without finding the ancestor
+    return false;
+  }
 }
 
 nlohmann::json Project::SceneConf::serialize() const {
@@ -33,6 +57,7 @@ nlohmann::json Project::SceneConf::serialize() const {
     b.set(layer.fogColor);
     b.set(layer.fogMin);
     b.set(layer.fogMax);
+    b.set(layer.lightMode);
   };
 
   Utils::JSON::Builder builder{};
@@ -47,6 +72,12 @@ nlohmann::json Project::SceneConf::serialize() const {
     .set(frameLimit)
     .set(filter)
     .set(audioFreq)
+    .set(physicsTickRate)
+    .set(gravity)
+    .set(visualUnitsPerMeter)
+    .set(velocitySolverIterations)
+    .set(positionSolverIterations)
+    .set(interpolatePhysicsTransforms)
     .setArray<LayerConf>("layers3D", layers3D, writeLayer)
     .setArray<LayerConf>("layersPtx", layersPtx, writeLayer)
     .setArray<LayerConf>("layers2D", layers2D, writeLayer);
@@ -62,7 +93,7 @@ Project::Scene::Scene(int id_, const std::string &projectPath)
 
   deserialize(Utils::FS::loadTextFile(scenePath + "/scene.json"));
 
-  root.id = 0;
+  root.runtimeId = 0;
   root.name = "Scene";
   root.uuid = Utils::Hash::sha256_64bit(root.name);
 }
@@ -86,14 +117,13 @@ std::shared_ptr<Project::Object> Project::Scene::addObject(Object &parent) {
   return addObject(parent, child, true);
 }
 
-std::shared_ptr<Project::Object> Project::Scene::addObject(Object&parent, std::shared_ptr<Object> obj, bool generateIDs) {
+std::shared_ptr<Project::Object> Project::Scene::addObject(Object&parent, std::shared_ptr<Object> obj, bool generateUUID) {
   parent.children.push_back(obj);
 
-  auto setChildUUIDs = [this, generateIDs](const std::shared_ptr<Object> &objChild, auto& setChildUIDsRef) -> void
+  auto setChildUUIDs = [this, generateUUID](const std::shared_ptr<Object> &objChild, auto& setChildUIDsRef) -> void
   {
-    if(generateIDs)
+    if(generateUUID)
     {
-      objChild->id = getFreeObjectId();
       objChild->uuid = Utils::Hash::randomU64();
     }
 
@@ -113,8 +143,7 @@ std::shared_ptr<Project::Object> Project::Scene::addPrefabInstance(uint64_t pref
   if (!prefab)return nullptr;
 
   auto obj = std::make_shared<Object>(root);
-  obj->id = getFreeObjectId();
-  obj->name += prefab->obj.name + " ("+std::to_string(obj->id)+")";
+  obj->name += prefab->obj.name;
   obj->uuid = Utils::Hash::randomU32();
   obj->pos = prefab->obj.pos;
   obj->rot = prefab->obj.rot;
@@ -146,7 +175,7 @@ void Project::Scene::removeAllObjects() {
 bool Project::Scene::moveObject(uint32_t uuidObject, uint32_t uuidTarget, bool asChild)
 {
   if(uuidObject == uuidTarget) {
-    return true;
+    return false;
   }
 
   auto objIt = objectsMap.find(uuidObject);
@@ -158,6 +187,10 @@ bool Project::Scene::moveObject(uint32_t uuidObject, uint32_t uuidTarget, bool a
 
   auto obj = objIt->second;
   auto target = targetIsRoot ? std::shared_ptr<Object>{} : targetIt->second;
+
+  // Moving object into descendant --> Disallow
+  if (!targetIsRoot && isDescendantOf(target.get(), uuidObject))
+    return false;
 
   // Remove from current parent
   if (obj->parent) {
@@ -215,6 +248,31 @@ uint32_t Project::Scene::createPrefabFromObject(uint32_t uuid)
 
   Prefab prefab{};
   prefab.uuid.value = Utils::Hash::randomU64();
+
+  // Scene objects are world-positioned, the engine has no transform hierarchy. Re-base
+  // the subtree so each descendant's transform is relative to its parent. Otherwise
+  // expanding the prefab at an instance's transform would double-count world positions
+  // and place nested objects far away.
+  std::function<void(Object&, glm::vec3, glm::quat, glm::vec3)> rebase =
+    [&](Object &node, glm::vec3 pPos, glm::quat pRot, glm::vec3 pScale) {
+      glm::quat pRotInv = glm::inverse(pRot);
+      for(auto &child : node.children) {
+        glm::vec3 &cp = child->pos.resolve(child->propOverrides);
+        glm::quat &cr = child->rot.resolve(child->propOverrides);
+        glm::vec3 &cs = child->scale.resolve(child->propOverrides);
+        glm::vec3 cwPos = cp, cwScale = cs;
+        glm::quat cwRot = cr;
+        cp = (pRotInv * (cwPos - pPos)) / pScale;
+        cr = pRotInv * cwRot;
+        cs = cwScale / pScale;
+        rebase(*child, cwPos, cwRot, cwScale);
+      }
+    };
+  rebase(*obj,
+    obj->pos.resolve(obj->propOverrides),
+    obj->rot.resolve(obj->propOverrides),
+    obj->scale.resolve(obj->propOverrides));
+
   auto prefabJson = prefab.serialize(*obj);
 
   std::string name = obj->name;
@@ -230,7 +288,101 @@ uint32_t Project::Scene::createPrefabFromObject(uint32_t uuid)
   );
 
   ctx.project->getAssets().reload();
+
+  // Convert the source object into a thin instance of the new prefab, so its content
+  // now comes from the prefab definition (single source of truth) and the inspector
+  // shows it as a prefab instance. Its placement is kept via transform overrides.
+  std::function<void(Object&)> unregister = [&](Object &o) {
+    for(auto &child : o.children) unregister(*child);
+    ctx.removeObjectSelection(o.uuid);
+    objectsMap.erase(o.uuid);
+  };
+  for(auto &child : obj->children) unregister(*child);
+
+  obj->children.clear();
+  obj->components.clear();
+  obj->propOverrides.clear();
+  obj->uuidPrefab.value = prefab.uuid.value;
+  obj->addPropOverride(obj->pos);
+  obj->addPropOverride(obj->rot);
+  obj->addPropOverride(obj->scale);
   return 0;
+}
+
+void Project::Scene::unpackPrefabInstance(uint32_t uuid)
+{
+  auto inst = getObjectByUUID(uuid);
+  if(!inst || !inst->isPrefabInstance())return;
+  auto prefab = ctx.project->getAssets().getPrefabByUUID(inst->uuidPrefab.value);
+  if(!prefab)return;
+  auto &def = prefab->obj;
+
+  // The instance keeps its uuid, placement and root-level component overrides (same
+  // component uuids resolve), so it just gains the prefab root's components.
+  glm::vec3 wPos = inst->pos.resolve(inst->propOverrides);
+  glm::quat wRot = inst->rot.resolve(inst->propOverrides);
+  glm::vec3 wScale = inst->scale.resolve(inst->propOverrides);
+
+  auto cloneComponents = [](Object &dst, const Object &src) {
+    for(const auto &comp : src.components) {
+      auto &cdef = Component::TABLE[comp.id];
+      auto data = cdef.funcSerialize(comp);
+      dst.components.push_back(Component::Entry{
+        .id = comp.id, .uuid = comp.uuid, .name = comp.name,
+        .data = cdef.funcDeserialize(data)
+      });
+    }
+  };
+  cloneComponents(*inst, def);
+
+  // Materialize the prefab's child tree with composed world transforms. Scene objects
+  // are world-positioned, so each node bakes its world transform. Nested prefab
+  // instances stay thin (keep uuidPrefab + their prefab-authored overrides).
+  std::function<void(Object&, std::shared_ptr<Object>, glm::vec3, glm::quat, glm::vec3)> build =
+    [&](Object &defNode, const std::shared_ptr<Object> &parent,
+        glm::vec3 pPos, glm::quat pRot, glm::vec3 pScale)
+  {
+    auto child = std::make_shared<Object>(*parent);
+    child->name = defNode.name;
+    child->uuid = Utils::Hash::randomU64();
+    child->enabled = defNode.enabled;
+    child->selectable = defNode.selectable;
+
+    glm::vec3 lpos = defNode.pos.resolve(defNode.propOverrides);
+    glm::quat lrot = defNode.rot.resolve(defNode.propOverrides);
+    glm::vec3 lscale = defNode.scale.resolve(defNode.propOverrides);
+    glm::vec3 cwPos = pPos + pRot * (pScale * lpos);
+    glm::quat cwRot = pRot * lrot;
+    glm::vec3 cwScale = pScale * lscale;
+    child->pos.value = cwPos;
+    child->rot.value = cwRot;
+    child->scale.value = cwScale;
+
+    if(defNode.isPrefabInstance()) {
+      // Stays a prefab instance, now placed in world space.
+      child->uuidPrefab.value = defNode.uuidPrefab.value;
+      child->propOverrides = defNode.propOverrides; // prefab-authored overrides
+      child->addPropOverride(child->pos);
+      child->addPropOverride(child->rot);
+      child->addPropOverride(child->scale);
+    } else {
+      cloneComponents(*child, defNode);
+    }
+
+    addObject(*parent, child);
+
+    if(!defNode.isPrefabInstance()) {
+      for(const auto &gc : defNode.children) {
+        build(*gc, child, cwPos, cwRot, cwScale);
+      }
+    }
+  };
+
+  for(const auto &defChild : def.children) {
+    build(*defChild, inst, wPos, wRot, wScale);
+  }
+
+  inst->uuidPrefab.value = 0;
 }
 
 std::string Project::Scene::serialize(bool minify) {
@@ -292,6 +444,12 @@ void Project::Scene::deserialize(const std::string &data)
     Utils::JSON::readProp(docConf, conf.frameLimit, 0);
     Utils::JSON::readProp(docConf, conf.filter, 0);
     Utils::JSON::readProp(docConf, conf.audioFreq, 32000);
+    Utils::JSON::readProp(docConf, conf.physicsTickRate, 50);
+    Utils::JSON::readProp(docConf, conf.gravity, glm::vec3{0.0f, -9.81f, 0.0f});
+    Utils::JSON::readProp(docConf, conf.visualUnitsPerMeter, 100.0f);
+    Utils::JSON::readProp(docConf, conf.velocitySolverIterations, 7);
+    Utils::JSON::readProp(docConf, conf.positionSolverIterations, 6);
+    Utils::JSON::readProp(docConf, conf.interpolatePhysicsTransforms, true);
 
     auto readLayer = [](const nlohmann::json &dom) {
       LayerConf layer{};
@@ -304,7 +462,7 @@ void Project::Scene::deserialize(const std::string &data)
       Utils::JSON::readProp(dom, layer.fogColor);
       Utils::JSON::readProp(dom, layer.fogMin, 0.0f);
       Utils::JSON::readProp(dom, layer.fogMax, 0.0f);
-
+      Utils::JSON::readProp(dom, layer.lightMode, 0);
 
       return layer;
     };
@@ -332,20 +490,26 @@ void Project::Scene::deserialize(const std::string &data)
   root.deserialize(this, docGraph);
 }
 
-uint16_t Project::Scene::getFreeObjectId()
+uint32_t Project::Scene::assignRuntimeIds()
 {
-  uint16_t objId = 1;
-
-  for(int i=0; i<0xFFFF; ++i) {
-    bool found = false;
-    for (auto &[uuid, obj] : objectsMap) {
-      if (obj->id == objId) {
-        found = true;
-        break;
-      }
+  // Pre-order traversal: parents get a lower id than their children, root stays 0.
+  // Ids are unique per scene and only valid for this build.
+  uint32_t nextId = 1;
+  auto assign = [&nextId](const std::shared_ptr<Object> &obj, auto &assignRef) -> void
+  {
+    if(nextId > 0xFFFF) {
+      Utils::Logger::log("Scene has more than 65535 objects, runtime ids overflow", Utils::Logger::LEVEL_ERROR);
+      return;
     }
-    if (!found)break;
-    ++objId;
+    obj->runtimeId = static_cast<uint16_t>(nextId++);
+    for(const auto &child : obj->children) {
+      assignRef(child, assignRef);
+    }
+  };
+
+  root.runtimeId = 0;
+  for(const auto &child : root.children) {
+    assign(child, assign);
   }
-  return objId;
+  return nextId; // first free id, used as the base for expanded prefab-instance children
 }

@@ -13,6 +13,7 @@
 #include "systems/screenFade.h"
 #include "systems/sprites.h"
 #include "script/nodeGraph.h"
+#include "debug/debugMenu.h"
 
 namespace P64::User
 {
@@ -45,23 +46,6 @@ namespace P64::GlobalScript::C4F4D286D6CBAAAA
     User::ctx = {};
     User::ctx.controlledId = 1;
     User::Marker::init();
-
-    NodeGraph::registerFunction("ShowMessage"_crc32, User::Dialog::showMessage);
-
-    NodeGraph::registerFunction("FadeIn"_crc32, [](uint32_t val) {
-      User::ScreenFade::fadeIn(0, (float)val * (1.0f / 1000.0f));
-      return 1;
-    });
-
-    NodeGraph::registerFunction("FadeOut"_crc32, [](uint32_t val) {
-      User::ScreenFade::fadeOut(0, (float)val * (1.0f / 1000.0f));
-      return 1;
-    });
-
-    NodeGraph::registerFunction("SetBars"_crc32, [](uint32_t val) {
-      User::ctx.forceBars = val != 0;
-      return 1;
-    });
 
     // generate bayer matrix
     for(uint32_t y = 0; y < ditherDim; ++y)
@@ -98,6 +82,14 @@ namespace P64::GlobalScript::C4F4D286D6CBAAAA
   void onScenePostLoad()
   {
     User::ScreenFade::fadeIn(0, 1.4f);
+
+    Debug::Overlay::addCustomMenu("Game")
+      .add("Coins",   User::ctx.coins, 0, 200, 1)
+      .add("LifeCur", (uint32_t&)User::ctx.health, 0, 200, 1)
+      .add("LifeTot", User::ctx.healthTotal, 0, 200, 1)
+      .add("Bars",    User::ctx.forceBars)
+      .add("Fade-In", [](auto &m){ User::ScreenFade::fadeIn(0, 1.0f); })
+      .add("Fade-Out",[](auto &m){ User::ScreenFade::fadeOut(0, 1.0f); });
   }
 
   void onScenePostUnload()

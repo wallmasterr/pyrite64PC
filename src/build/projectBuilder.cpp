@@ -6,11 +6,14 @@
 
 #include <filesystem>
 #include <thread>
+#include <algorithm>
 #include "../utils/fs.h"
 #include "../utils/logger.h"
 #include "../utils/proc.h"
 #include "../utils/string.h"
 #include "../utils/textureFormats.h"
+#include "romMetaBuilder.h"
+#include "../editor/imgui/notification.h"
 
 namespace fs = std::filesystem;
 using AT = Project::FileType;
@@ -83,6 +86,7 @@ bool Build::buildProject(const std::string &configPath, bool runN64Make)
     _putenv_s("PATH", "C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin");
   #endif
 
+  auto fsPath = fs::absolute(fs::path{path} / "filesystem");
   auto fsDataPath = fs::absolute(fs::path{path} / "filesystem" / "p64");
   if (!fs::exists(fsDataPath)) {
     fs::create_directories(fsDataPath);
@@ -103,6 +107,32 @@ bool Build::buildProject(const std::string &configPath, bool runN64Make)
         || entry.type == Project::FileType::CODE_GLOBAL
       ) continue;
       sceneCtx.addAsset(entry);
+    }
+  }
+
+  // check if files got added/removed, in which case trigger an asset rebuild.
+  // This is needed as some assets reference others via indices.
+  {
+    auto fileNames = sceneCtx.files;
+    std::sort(fileNames.begin(), fileNames.end());
+    auto fileStr = Utils::join(fileNames, " ");
+
+    auto oldFileStr = Utils::FS::loadTextFile(fsDataPath / "fileList.txt");
+    if(fileStr != oldFileStr)
+    {
+      Utils::Logger::log("Asset list changed, clean asset dependencies");
+      Utils::FS::delTypeRecursive(fsPath, ".t3dm");
+      Utils::FS::delTypeRecursive(fsPath, ".pf");
+      fs::remove_all(fsDataPath);
+      fs::create_directories(fsDataPath);
+
+      cleanProject(project, {
+        .code = true,
+        .assets = false,
+        .engine = false,
+      });
+
+      Utils::FS::saveTextFile(fsDataPath / "fileList.txt", fileStr);
     }
   }
 
@@ -136,7 +166,9 @@ bool Build::buildProject(const std::string &configPath, bool runN64Make)
       buildScene(project, scene, sceneCtx);
     } catch(const std::exception &e)
     {
-      Utils::Logger::log(std::string("Scene build failed: ") + e.what(), Utils::Logger::LEVEL_ERROR);
+      auto msg = std::string("Scene build failed:\n") + e.what();
+      Utils::Logger::log(msg, Utils::Logger::LEVEL_ERROR);
+      Editor::Noti::add(Editor::Noti::Type::ERROR, msg);
       return false;
     }
   }
@@ -198,23 +230,14 @@ bool Build::buildProject(const std::string &configPath, bool runN64Make)
       {"{{PROJECT_NAME}}",      project.conf.name},
       {"{{ASSET_LIST}}",        Utils::join(filesSorted, " ")},
       {"{{USER_CODE_DIRS}}",    userCodeRules},
+      {"{{ROM_HEADER_FLAGS}}",  buildRomHeaderFlags(project)},
       {"{{P64_SELF_PATH}}",     Utils::Proc::getSelfPath().string()},
       {"{{PROJECT_SELF_PATH}}", fs::absolute(configPath).string()},
     }
   );
 
   auto mkPath = fs::absolute(path) / "Makefile";
-  auto oldMakefile = Utils::FS::loadTextFile(mkPath);
-  if (makefile != oldMakefile) {
-    Utils::Logger::log("Makefile changed, clean build");
-    Utils::FS::saveTextFile(mkPath, makefile);
-
-    cleanProject(project, {
-      .code = true,
-      .assets = false,
-      .engine = false,
-    });
-  }
+  Utils::FS::saveTextFile(mkPath, makefile);
 
   {
     Utils::BinaryFile f{};
@@ -336,6 +359,9 @@ bool Build::cleanProject(const Project::Project &project, const CleanArgs &args)
   }
   if(args.engine) {
     fs::remove_all(projPath / "engine" / "build");
+  }
+  if(args.engineSrc) {
+    fs::remove_all(projPath / "engine");
   }
 
   return true;

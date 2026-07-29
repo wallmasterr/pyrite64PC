@@ -14,6 +14,8 @@
 #include "glm/vec3.hpp"
 #include "glm/vec4.hpp"
 
+#include "string.h"
+
 namespace fs = std::filesystem;
 
 namespace Utils
@@ -22,8 +24,10 @@ namespace Utils
   {
     u8, s8, u16, s16, u32, s32,
     f32, string,
+    VEC3, QUAT,
     ASSET_SPRITE,
-    OBJECT_REF
+    OBJECT_REF,
+    PREFAB,
   };
 
   class BinaryFile
@@ -115,6 +119,15 @@ namespace Utils
           case u8: write<uint8_t>(std::stoul(str)); break;
           case s8: write<int8_t>(std::stol(str)); break;
           case OBJECT_REF: write<uint32_t>(std::stoul(str)); break;
+          case PREFAB: write<uint32_t>(std::stoul(str)); break;
+          case VEC3:
+          case QUAT: {
+            auto values = parseFloatList(str);
+            size_t count = (type == VEC3) ? 3 : 4;
+            if(type == QUAT && values.empty())values = {0,0,0,1}; // identity
+            values.resize(count, 0.0f);
+            for(size_t i=0; i<count; ++i)write<float>(values[i]);
+          } break;
           case string:
             for(char c : str)write<uint8_t>(c);
             write<uint8_t>(0);
@@ -154,6 +167,13 @@ namespace Utils
         setPos(posStack.back());
         posStack.pop_back();
         return oldPos;
+      }
+
+      void atPos(uint32_t tempPos, auto cb)
+      {
+        posPush(tempPos);
+        cb();
+        posPop();
       }
 
       void align(uint32_t alignment) {

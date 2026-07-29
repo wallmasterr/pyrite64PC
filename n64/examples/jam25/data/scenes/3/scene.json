@@ -1,5 +1,6 @@
 {
   "conf": {
+    "audioFreq": 32000,
     "clearColor": [
       0.0,
       0.0,
@@ -13,6 +14,12 @@
     "fbWidth": 320,
     "filter": 1,
     "frameLimit": 0,
+    "gravity": [
+      0.0,
+      -1.5679999589920044,
+      0.0
+    ],
+    "interpolatePhysicsTransforms": true,
     "layers2D": [
       {
         "blender": 0,
@@ -28,6 +35,7 @@
         "fogColorMode": 0,
         "fogMax": 0.0,
         "fogMin": 0.0,
+        "lightMode": 0,
         "name": "2D"
       }
     ],
@@ -46,6 +54,7 @@
         "fogColorMode": 0,
         "fogMax": 0.0,
         "fogMin": 0.0,
+        "lightMode": 0,
         "name": "3D Opaque"
       },
       {
@@ -62,6 +71,7 @@
         "fogColorMode": 0,
         "fogMax": 0.0,
         "fogMin": 0.0,
+        "lightMode": 0,
         "name": "3D Transp."
       }
     ],
@@ -80,11 +90,16 @@
         "fogColorMode": 0,
         "fogMax": 0.0,
         "fogMin": 0.0,
+        "lightMode": 0,
         "name": "PTX Opaque"
       }
     ],
     "name": "Test-HDR",
-    "renderPipeline": 1
+    "physicsTickRate": 50,
+    "positionSolverIterations": 6,
+    "renderPipeline": 1,
+    "velocitySolverIterations": 7,
+    "visualUnitsPerMeter": 100.0
   },
   "graph": {
     "children": [
@@ -96,6 +111,7 @@
               "aspect": 0.0,
               "far": 1000.0,
               "fov": 75.0,
+              "mode": 0,
               "near": 10.0,
               "vpOffset": [
                 0,
@@ -119,6 +135,7 @@
                 1.0
               ],
               "index": 0,
+              "size": 50.0,
               "type": 0
             },
             "id": 2,
@@ -135,6 +152,7 @@
           148.7613525390625
         ],
         "propOverrides": {},
+        "proportionalScale": false,
         "rot": [
           0.0,
           0.0,
@@ -164,6 +182,7 @@
         "propOverrides": {
           "17807472640229936847": "9:HDR Test"
         },
+        "proportionalScale": false,
         "rot": [
           0.0,
           0.0,
@@ -223,6 +242,8 @@
           },
           {
             "data": {
+              "maskRead": 255,
+              "maskWrite": 255,
               "meshFilter": "",
               "modelUUID": 67300967874118795
             },
@@ -251,6 +272,7 @@
           0.0
         ],
         "propOverrides": {},
+        "proportionalScale": false,
         "rot": [
           0.0,
           0.0,
@@ -283,12 +305,13 @@
           },
           {
             "data": {
+              "bounce": 0.0,
+              "friction": 0.800000011920929,
               "halfExtend": [
                 30.0,
                 30.0,
                 30.0
               ],
-              "isFixed": false,
               "isTrigger": true,
               "maskRead": 1,
               "maskWrite": 1,
@@ -313,6 +336,7 @@
           -40.0
         ],
         "propOverrides": {},
+        "proportionalScale": false,
         "rot": [
           0.0,
           0.0,
@@ -344,6 +368,7 @@
           "13911321452997764027": "1:-27.265146,0.000000,151.549210",
           "9467563534403475754": "0:0.000000,0.000000,0.000000,1.000000"
         },
+        "proportionalScale": false,
         "rot": [
           0.0,
           0.0,
@@ -375,6 +400,7 @@
           "13911321452997764027": "1:-217.826309,0.000522,32.914337",
           "9467563534403475754": "0:0.000000,0.000000,0.000000,1.000000"
         },
+        "proportionalScale": false,
         "rot": [
           0.0,
           0.0,
@@ -401,6 +427,7 @@
       0.0
     ],
     "propOverrides": {},
+    "proportionalScale": false,
     "rot": [
       0.0,
       0.0,

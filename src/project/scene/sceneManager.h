@@ -41,6 +41,8 @@ namespace Project
       [[nodiscard]] const std::vector<SceneEntry> &getEntries() const { return entries; }
 
       void add();
+      void remove(int id);
+      void duplicate(int id);
 
       void loadScene(int id);
       [[nodiscard]] Scene* getLoadedScene() const { return loadedScene; }

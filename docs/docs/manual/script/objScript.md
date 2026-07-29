@@ -126,15 +126,47 @@ While you can use any type you want for variables,\
 exposed ones are limited to a few known types:
 - Integers: `uint8_t`, `int8_t`, `uint16_t`, `int16_t`, `uint32_t`, `int32_t`
 - Float: `float`
+- Vectors: `fm_vec3_t`, `fm_quat_t`
 - References: `AssetRef<sprite_t>`, `ObjectRef`
 
 The reference types allow you to plug in assets or objects from the editor.
+
+Vectors are edited as their individual components,\
+quaternions as their raw `x,y,z,w` values.\
+Default values can be set with a regular initializer, e.g. `fm_vec3_t dir = {0, 1, 0};`.\
+A quaternion without a default value starts as the identity rotation.
 
 In the editor, you can now see the values showing up:
 
 ```{image} /_static/img/script_args.png
 :align: center
 ```
+
+### Bitmask Attribute
+
+For unsigned integer members (`uint8_t`, `uint16_t`, `uint32_t`) you can add a\
+`P64::Bitmask` attribute to edit them as a set of named flags instead of a plain number.\
+The attribute takes a comma-separated list of `bit=name` entries,\
+where `bit` is the bit index (`0` being the least significant bit):
+
+```cpp
+P64_DATA(
+  [[P64::Name("Elements"), P64::Bitmask("0=Fire, 1=Water, 2=Earth")]]
+  uint8_t elementFlags;
+);
+```
+
+In the editor this shows up as a select-box where you can toggle each named bit on or off.\
+The resulting value is the combined bitmask, so for the example above selecting\
+"Fire" and "Earth" stores `0b101` (`5`).
+
+You don't need to name every bit, only the ones you want to expose.\
+At runtime the member is just a regular integer, so you can test the bits as usual:
+
+```cpp
+if(data->elementFlags & (1 << 0)) { /* Fire is set */ }
+```
+
 \
 Since a script is just a regular C++ file, it is also possible to have global memory.\
 This can be useful to share data global across all instances of a script.
@@ -221,6 +253,59 @@ void update(Object& obj, Data *data, float deltaTime)
 }
 ```
 
+#### Fixed Update
+```cpp
+void fixedUpdate(Object& obj, Data *data, float fixedDeltaTime)
+```
+
+Called once per collision scene step, before collision detection and physics response.\
+This is the place to put your logic that interacts with rigidbodies and colliders,\
+as well as code that applies forces to bodies.
+It is also the recommended place to perform raycasts into the collision scene.
+
+There is a parameter `fixedDeltaTime` provided as an argument.\
+This is the fixed Physics Step time mostly detached from the frame time.\
+This is mostly fixed but may be different between scenes depending on the scenes `Physics Tickrate` setting.\
+A lower `Physics Tickrate` may improve performance but at the same time reduces simulation accuracy.\
+Choose according to your games needs.
+
+For example, a fixed Update function that applies an acceleration at a specific point in space to a rigidbody:
+```cpp
+void fixedUpdate(Object& obj, Data *data, float fixedDeltaTime)
+{
+  constexpr float ACCELERATION = 1000.0f;
+  fm_vec3_t localForward = obj.rot * VEC3_FORWARD;
+  //choose point slightly unter rigidbodies center for more realistic effect
+  fm_vec3_t applyAtPoint = obj.pos - (fm_vec3_t){0.0f, 5.0f, 0.0f};
+  data->carRigidBody->applyForceAtPoint(localForward * data->moveInput * ACCELERATION, applyAtPoint);
+}  
+```
+
+Or another example that performs a raycast and uses the result to apply a spring force to a rigidbody:
+```cpp
+void fixedUpdate(Object &obj, Data *data, float fixedDeltaTime)
+{
+  Coll::CollisionScene *collisionScene = Coll::collisionSceneGetInstance();
+  Coll::RaycastHit hit;
+  float maxLength = data->RestLength + data->SpringTravel;
+
+  fm_vec3_t localUp = obj.rot * VEC3_UP;
+  fm_vec3_t localDown = -localUp;
+  data->wheelIsGroundedFlags[i] = 1;
+
+  Raycast ray = Coll::Raycast::create(data->ConnectionPoint, localDown, maxLength, Coll::RaycastColliderTypeFlags::MESH_COLLIDERS, false, 0xff);
+  if (collisionScene->raycast(ray, hit))
+  {
+    float currentSpringLength = hit.distance - data->WheelRadius;
+    float springCompression = (data->RestLength - currentSpringLength) / data->SpringTravel;
+    float springForce = springCompression * data->SpringStiffness;
+    data->carRigidBody->applyForceAtPoint(localUp * springForce, data->ConnectionPoint);
+  }
+}
+```
+
+
+
 #### Draw
 ```cpp
 void draw(Object& obj, Data *data, float deltaTime)
@@ -299,6 +384,8 @@ If a collider is attached to your object, you may start to receive collision eve
 The `event` argument gives you further information about the collision.\
 For example which collider object or mesh was involved.\
 Note that this function is directly called during the collision check, and not deferred like `onEvent`.
+Collision checks are performed during the collision scene step which might happen more than once or not at all per frame\
+depending on the Scenes framerate and the `Physics Tickrate` setting.
 
 As an example, here is an object that plays a sound, spawns a particle effect,\
 and then removes itself after colliding.

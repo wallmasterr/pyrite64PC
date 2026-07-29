@@ -12,11 +12,13 @@
 #include "scene/components/camera.h"
 #include "scene/components/collMesh.h"
 #include "scene/components/collBody.h"
+#include "scene/components/rigidBody.h"
 #include "scene/components/audio2d.h"
 #include "scene/components/constraint.h"
 #include "scene/components/culling.h"
 #include "scene/components/nodeGraph.h"
 #include "scene/components/animModel.h"
+#include "scene/components/charBody.h"
 
 // some template magic to auto-detect if a function exists in a component
 #define HAS_FUNC_TPL(NAME_HAS, NAME_GET, FUNC) \
@@ -35,6 +37,7 @@ namespace
 {
   HAS_FUNC_TPL(has_draw,   get_draw,    draw   )
   HAS_FUNC_TPL(has_update, get_update,  update )
+  HAS_FUNC_TPL(has_fixed_update, get_fixed_update, fixedUpdate)
   HAS_FUNC_TPL(has_event,  get_event,   onEvent)
   HAS_FUNC_TPL(has_coll,   get_coll,    onColl )
 }
@@ -43,6 +46,7 @@ namespace
   [Comp::NAME::ID] = { \
     .initDel = reinterpret_cast<FuncInitDel>(Comp::NAME::initDelete), \
     .update = (FuncUpdate)get_update<Comp::NAME>(), \
+    .fixedUpdate = (FuncFixedUpdate)get_fixed_update<Comp::NAME>(), \
     .draw   = (FuncDraw)(get_draw<Comp::NAME>()), \
     .onEvent = (FuncOnEvent)(get_event<Comp::NAME>()), \
     .onColl = (FuncOnColl)(get_coll<Comp::NAME>()), \
@@ -63,5 +67,7 @@ namespace P64
     SET_COMP(Culling),
     SET_COMP(NodeGraph),
     SET_COMP(AnimModel),
+    SET_COMP(RigidBody),
+    SET_COMP(CharBody),
   };
 }

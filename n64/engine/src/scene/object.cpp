@@ -20,36 +20,36 @@ P64::Object::~Object()
 
 void P64::Object::setEnabled(bool isEnabled)
 {
-  auto oldFlags = flags;
-  if(isEnabled) {
-    flags |= ObjectFlags::SELF_ACTIVE;
+  if(isEnabled != this->isSelfEnabled()) {
+    flags |= ObjectFlags::PENDING_ACTIVE_CHG;
+    SceneManager::getCurrent().needsObjStateUpdate = true;
   } else {
-    flags &= ~ObjectFlags::SELF_ACTIVE;
-  }
-
-  if(oldFlags == flags)return;
-
-  auto compRefs = getCompRefs();
-  for (uint32_t i=0; i<compCount; ++i) {
-    const auto &compDef = COMP_TABLE[compRefs[i].type];
-    if(compDef.onEvent)
-    {
-      char* dataPtr = (char*)this + compRefs[i].offset;
-      compDef.onEvent(*this, dataPtr, {
-        .senderId = 0,
-        .type = isEnabled ? EVENT_TYPE_ENABLE : EVENT_TYPE_DISABLE,
-        .value = 0
-      });
-    }
+    flags &= ~ObjectFlags::PENDING_ACTIVE_CHG;
   }
 }
 
-void P64::Object::remove()
+void P64::Object::setVisible(bool isVisible)
+{
+  if (isVisible != this->isSelfVisible()) {
+    setFlag(ObjectFlags::SELF_HIDDEN, !isVisible);
+    SceneManager::getCurrent().needsObjStateUpdate = true;
+  }
+}
+
+void P64::Object::remove(bool keepChildren)
 {
   if(flags & ObjectFlags::PENDING_REMOVE)return;
   flags |= ObjectFlags::PENDING_REMOVE;
-  flags &= ~ObjectFlags::ACTIVE;
+  flags &= ~(ObjectFlags::ACTIVE | ObjectFlags::PENDING_ACTIVE_CHG);
   SceneManager::getCurrent().removeObject(*this);
+
+  if(!keepChildren)
+  {
+    iterChildren([keepChildren](Object* child)
+    {
+        if(child) child->remove(keepChildren);
+    });
+  }
 }
 
 fm_vec3_t P64::Object::intoLocalSpace(const fm_vec3_t &p) const

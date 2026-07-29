@@ -7,17 +7,265 @@
 #include "misc/cpp/imgui_stdlib.h"
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <functional>
+#include <iterator>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "imgui_internal.h"
 #include "../../imgui/helper.h"
+#include "../../transformUtils.h"
 #include "../../../context.h"
 #include "../../../project/component/components.h"
 #include "../../selectionUtils.h"
 #include "../../undoRedo.h"
+
+namespace
+{
+  constexpr int COMP_ID_CODE = 0;
+
+  struct ComponentDragPayload
+  {
+    Project::Object *owner{};
+    uint64_t compUUID{};
+  };
+
+  struct ComponentReorderRequest
+  {
+    Project::Object *owner{};
+    uint64_t compUUID{};
+    size_t insertIndex{};
+  };
+
+  /**
+   * Returns whether the current drag payload is an object-script asset.
+   * @param scriptUUID Optional output for the dragged script UUID.
+   * @return true when the active payload is a CODE_OBJ asset.
+   */
+  bool isDraggedObjectScript(uint64_t *scriptUUID = nullptr)
+  {
+    // Access ImGui's drag-drop state
+    ImGuiContext &g = *GImGui;
+    // There is no drag operation or no project assets to inspect --> Do nothing
+    if (!g.DragDropActive || !ctx.project) return false;
+
+    // Only asset payloads with UUIDs can create Code components here
+    const ImGuiPayload *payload = ImGui::GetDragDropPayload();
+    if (!payload || !payload->IsDataType("ASSET") || payload->DataSize != sizeof(uint64_t))
+      return false;
+
+    // Resolve the dragged UUID back to an asset entry and verify that it is an object script
+    const uint64_t uuid = *static_cast<const uint64_t*>(payload->Data);
+    auto *script = ctx.project->getAssets().getEntryByUUID(uuid);
+    if (!script || script->type != Project::FileType::CODE_OBJ)
+      return false;
+
+    // Requeted to output the UUID --> Assign it
+    if (scriptUUID)
+      *scriptUUID = uuid;
+
+    return true;
+  }
+
+  /**
+   * Creates a Code component using dropped Script.
+   * @param targetObj Object receiving the new component.
+   * @param scriptUUID UUID of the dragged script.
+   * @return true when the component was added successfully.
+   */
+  bool createCodeComponentFromScript(Project::Object *targetObj, uint64_t scriptUUID)
+  {
+    // There is no target object --> Do nothing
+    if (!targetObj) return false;
+
+    // Track the component count to detect whether addComponent actually appended one
+    const auto oldSize = targetObj->components.size();
+    // Record undo history before modifying the component list
+    Editor::UndoRedo::getHistory().markChanged("Add Code Component");
+    // Create a Code component
+    targetObj->addComponent(COMP_ID_CODE);
+    if (targetObj->components.size() <= oldSize) return false;
+
+    // Set the Script field for the created Code component
+    auto &comp = targetObj->components.back();
+    Project::Component::Code::setScript(comp, scriptUUID, false);
+    return true;
+  }
+
+  /**
+   * Draws a thin insertion target for component reordering.
+   * @param owner Object owning the components.
+   * @param insertIndex Target insertion index in the owner component list.
+   * @param previousComponentCollapsed true when the component above the index is folded (spacing is smaller).
+   * @param reorderRequest Output request filled when a component is dropped here.
+   */
+  void drawComponentInsertTarget(
+    Project::Object *owner,
+    size_t insertIndex,
+    bool previousComponentCollapsed,
+    ComponentReorderRequest &reorderRequest
+  ) {
+    // No drag operation active --> Abort
+    if (!owner || !ImGui::IsDragDropActive()) return;
+
+    // Center the hit area on the current layout boundary without changing layout
+    const ImVec2 cursorScreen = ImGui::GetCursorScreenPos();
+    ImGuiWindow *window = ImGui::GetCurrentWindowRead();
+    const ImGuiStyle &style = ImGui::GetStyle();
+    const float headerOuterExtend = IM_TRUNC(window->WindowPadding.x * 0.5f);
+    const float minX = cursorScreen.x - headerOuterExtend;
+    const float maxX = window->WorkRect.Max.x + headerOuterExtend;
+    const float markerMargin = 1.0f; // Vertical margin between the marker and the components
+    const float markerHeight = style.ItemSpacing.y - markerMargin * 2.0f; // Make marker fit height, extra margin top and bottom
+    const float hitHeight = 18.0f; // Vertical space where the drop between component is accepted
+    const float markerY = cursorScreen.y - style.ItemSpacing.y * 0.5f - markerMargin + (previousComponentCollapsed ? 1.0f : 0.0f); // Y start position of the marker
+    const ImRect hitRect{
+      ImVec2{minX, markerY - hitHeight * 0.5f},
+      ImVec2{maxX, markerY + hitHeight * 0.5f}
+    };
+
+    // Register an explicit drop target that does not draw ImGui's default rectangle
+    ImGui::PushID(owner);
+    ImGui::PushID(static_cast<int>(insertIndex));
+    if (ImGui::BeginDragDropTargetCustom(hitRect, ImGui::GetID("##ComponentInsertTarget"))) {
+      const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(
+        "COMPONENT",
+        ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect
+      );
+
+      // Only components from the same owner can be reordered within this list
+      if (payload && payload->DataSize == sizeof(ComponentDragPayload)) {
+        const auto &dragPayload = *static_cast<const ComponentDragPayload*>(payload->Data);
+        if (dragPayload.owner == owner) {
+          const ImU32 markerColor = ImGui::GetColorU32(ImGuiCol_DragDropTarget);
+          ImGui::GetForegroundDrawList()->AddRectFilled(
+            ImVec2{minX, markerY - markerHeight * 0.5f},
+            ImVec2{maxX, markerY + markerHeight * 0.5f},
+            markerColor,
+            0.0f
+          );
+
+          // Mouse released over this boundary --> Store the reorder request
+          if (payload->Delivery) {
+            reorderRequest.owner = owner;
+            reorderRequest.compUUID = dragPayload.compUUID;
+            reorderRequest.insertIndex = insertIndex;
+          }
+        }
+      }
+
+      ImGui::EndDragDropTarget();
+    }
+    ImGui::PopID();
+    ImGui::PopID();
+  }
+
+  /**
+   * Moves a component to an index within its owner.
+   * @param owner Object whose component list should be reordered.
+   * @param compUUID UUID of the component to move.
+   * @param insertIndex Target index before removing the source component.
+   * @return true when the component order changed.
+   */
+  bool reorderComponent(Project::Object *owner, uint64_t compUUID, size_t insertIndex)
+  {
+    // There is no owner --> Abort
+    if (!owner) return false;
+
+    // Find the source component in the list of the owner
+    auto &components = owner->components;
+    auto it = std::find_if(
+      components.begin(),
+      components.end(),
+      [compUUID](const Project::Component::Entry &entry) {
+        return entry.uuid == compUUID;
+      }
+    );
+    // Cannot find the component --> Abort
+    if (it == components.end()) return false;
+
+    // Clamp the insertion index to the list size
+    insertIndex = std::min(insertIndex, components.size());
+
+    // Ignore drops that keep the component in the same place
+    const size_t sourceIndex = static_cast<size_t>(std::distance(components.begin(), it));
+    if (insertIndex == sourceIndex || insertIndex == sourceIndex + 1) return false;
+
+    // Move the component entry while preserving its UUID and data pointer
+    auto moving = std::move(*it);
+    components.erase(it);
+
+    // Removing an earlier element shifts later insertion boundaries one slot left
+    if (sourceIndex < insertIndex) --insertIndex;
+    components.insert(components.begin() + static_cast<std::ptrdiff_t>(insertIndex), std::move(moving));
+    
+    return true;
+  }
+
+  /**
+   * Handles dropping an object script onto the inspector panel.
+   * @param targetObj Object that should receive a new Code component.
+   * @param dropRect Custom panel-space drop rectangle.
+   * @param highlightWindow True to draw the inspector-wide highlight border.
+   * @return True when a valid script is hovering or was delivered to this target.
+   */
+  bool handleScriptComponentDropTarget(Project::Object *targetObj, const ImRect &dropRect, bool highlightWindow)
+  {
+    // Register the inspector panel as a custom drop target covering the requested rectangle
+    if (!ImGui::BeginDragDropTargetCustom(dropRect, ImGui::GetID("##ScriptComponentDropTarget"))) return false;
+
+    // Peek the asset payload while it hovers so the panel can highlight before delivery
+    const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(
+      "ASSET",
+      ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect
+    );
+    // There is no compatible payload --> Skip the target
+    if (!payload || payload->DataSize != sizeof(uint64_t)) {
+      ImGui::EndDragDropTarget();
+      return false;
+    }
+
+    // Resolve the hovered asset UUID and reject anything that is not an object Script
+    const uint64_t scriptUUID = *static_cast<const uint64_t*>(payload->Data);
+    auto *script = ctx.project->getAssets().getEntryByUUID(scriptUUID);
+    // Is not a Code component --> Skip the target
+    if (!script || script->type != Project::FileType::CODE_OBJ) {
+      ImGui::EndDragDropTarget();
+      return false;
+    }
+
+    if (highlightWindow) {
+      // Use the window's inner rectangle so the border matches the visible inspector panel
+      ImGuiWindow *window = ImGui::GetCurrentWindowRead();
+      auto col = ImGui::GetColorU32(ImGuiCol_DragDropTarget);
+      ImRect borderRect = window->InnerRect;
+      // Fix the rect size not to write outside of the panel
+      borderRect.Min.y += 1.0f;
+      borderRect.Min.x += 2.0f;
+      borderRect.Max.x -= 2.0f;
+      borderRect.Max.y -= 2.0f;
+      // Draw an outline to highlight the object inspector panel
+      ImGui::GetWindowDrawList()->AddRect(borderRect.Min, borderRect.Max, col, 0.0f, 0, 2.0f);
+    }
+
+    bool accepted = false;
+    // Released the mouse --> Commit drop, create Code component
+    if (payload->Delivery) {
+      accepted = createCodeComponentFromScript(targetObj, scriptUUID);
+    // Hovering valid script --> Mark the panel as active drop target
+    } else {
+      accepted = true;
+    }
+
+    // Close the custom target scope opened above
+    ImGui::EndDragDropTarget();
+    return accepted;
+  }
+}
 
 Editor::ObjectInspector::ObjectInspector() {
 }
@@ -139,8 +387,8 @@ void Editor::ObjectInspector::draw() {
             bool createdOverride = false;
             glm::vec3 resolvedBefore = (selObj->*prop).resolve(selObj->propOverrides);
             if (selObj->isPrefabInstance()
-                && !selObj->isPrefabEdit
-                && selObj->propOverrides.find((selObj->*prop).id) == selObj->propOverrides.end()) {
+                && !ctx.isPrefabEditing(selObj->uuid)
+                && !selObj->hasPropOverride(selObj->*prop)) {
               selObj->addPropOverride(selObj->*prop);
               createdOverride = true;
             }
@@ -160,8 +408,8 @@ void Editor::ObjectInspector::draw() {
             bool createdOverride = false;
             glm::quat resolvedBefore = (selObj->*prop).resolve(selObj->propOverrides);
             if (selObj->isPrefabInstance()
-                && !selObj->isPrefabEdit
-                && selObj->propOverrides.find((selObj->*prop).id) == selObj->propOverrides.end()) {
+                && !ctx.isPrefabEditing(selObj->uuid)
+                && !selObj->hasPropOverride(selObj->*prop)) {
               selObj->addPropOverride(selObj->*prop);
               createdOverride = true;
             }
@@ -207,19 +455,39 @@ void Editor::ObjectInspector::draw() {
           }
         };
 
-        ImTable::add("Pos");
-        ImGui::PushID("Pos");
+        ImTable::add("Position");
+        ImGui::PushID("Position");
         float posWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
-        drawFloatField("PosX", mixedPos[0], posValue.x, posWidth, "Edit Pos", [&](float val) {
+        drawFloatField("PosX", mixedPos[0], posValue.x, posWidth, "Edit Position", [&](float val) {
           applyVec3Component(&Project::Object::pos, 0, val);
         });
         ImGui::SameLine();
-        drawFloatField("PosY", mixedPos[1], posValue.y, posWidth, "Edit Pos", [&](float val) {
+        drawFloatField("PosY", mixedPos[1], posValue.y, posWidth, "Edit Position", [&](float val) {
           applyVec3Component(&Project::Object::pos, 1, val);
         });
         ImGui::SameLine();
-        drawFloatField("PosZ", mixedPos[2], posValue.z, posWidth, "Edit Pos", [&](float val) {
+        drawFloatField("PosZ", mixedPos[2], posValue.z, posWidth, "Edit Position", [&](float val) {
           applyVec3Component(&Project::Object::pos, 2, val);
+        });
+        ImGui::PopID();
+
+        ImTable::add("Rotation");
+        ImGui::PushID("Rotation");
+        float rotWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 3.0f) / 4.0f;
+        drawFloatField("RotX", mixedRot[0], rotValue.x, rotWidth, "Edit Rotation", [&](float val) {
+          applyQuatComponent(&Project::Object::rot, 0, val);
+        });
+        ImGui::SameLine();
+        drawFloatField("RotY", mixedRot[1], rotValue.y, rotWidth, "Edit Rotation", [&](float val) {
+          applyQuatComponent(&Project::Object::rot, 1, val);
+        });
+        ImGui::SameLine();
+        drawFloatField("RotZ", mixedRot[2], rotValue.z, rotWidth, "Edit Rotation", [&](float val) {
+          applyQuatComponent(&Project::Object::rot, 2, val);
+        });
+        ImGui::SameLine();
+        drawFloatField("RotW", mixedRot[3], rotValue.w, rotWidth, "Edit Rotation", [&](float val) {
+          applyQuatComponent(&Project::Object::rot, 3, val);
         });
         ImGui::PopID();
 
@@ -236,26 +504,6 @@ void Editor::ObjectInspector::draw() {
         ImGui::SameLine();
         drawFloatField("ScaleZ", mixedScale[2], scaleValue.z, scaleWidth, "Edit Scale", [&](float val) {
           applyVec3Component(&Project::Object::scale, 2, val);
-        });
-        ImGui::PopID();
-
-        ImTable::add("Rot");
-        ImGui::PushID("Rot");
-        float rotWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 3.0f) / 4.0f;
-        drawFloatField("RotX", mixedRot[0], rotValue.x, rotWidth, "Edit Rot", [&](float val) {
-          applyQuatComponent(&Project::Object::rot, 0, val);
-        });
-        ImGui::SameLine();
-        drawFloatField("RotY", mixedRot[1], rotValue.y, rotWidth, "Edit Rot", [&](float val) {
-          applyQuatComponent(&Project::Object::rot, 1, val);
-        });
-        ImGui::SameLine();
-        drawFloatField("RotZ", mixedRot[2], rotValue.z, rotWidth, "Edit Rot", [&](float val) {
-          applyQuatComponent(&Project::Object::rot, 2, val);
-        });
-        ImGui::SameLine();
-        drawFloatField("RotW", mixedRot[3], rotValue.w, rotWidth, "Edit Rot", [&](float val) {
-          applyQuatComponent(&Project::Object::rot, 3, val);
         });
         ImGui::PopID();
 
@@ -286,30 +534,52 @@ void Editor::ObjectInspector::draw() {
     isPrefabInst = true;
   }
 
+  // When a nested prefab object is selected (selSubPath), the inspector shows that node
+  // instead of the root instance, rendered through the same path below. The guards stay
+  // alive in 'nested' so its edits keep authoring to the right override owner.
+  Editor::SelectionUtils::NestedTarget nested;
+  if(isPrefabInst) Editor::SelectionUtils::resolveNestedTarget(nested, obj.get(), prefab.get());
 
-  //if (ImGui::CollapsingHeader("General", ImGuiTreeNodeFlags_DefaultOpen))
+  // The inspected target: the nested node when one is selected, else the root object.
+  Project::Object* tableObj = nested.isNested ? nested.node : obj.get();    // backs the override map
+  Project::Object* xfSrc    = nested.isNested ? nested.node : srcObj;       // transform property source
+  Project::Object* compSrc  = nested.isNested ? nested.nodeSrc : srcObj;    // component source
+  // A nested override authors via the active cascade (Path), the root and a direct
+  // definition edit author via a fresh component layer (Dispatch).
+  bool compViaPath = nested.isNested && !nested.directDefEdit;
+
+
   {
-    if (ImTable::start("General", obj.get())) {
-      ImTable::add("Name", obj->name);
+    if (ImTable::start("General", tableObj)) {
+      if(nested.isNested) {
+        // A nested node's name belongs to the prefab definition, so it is read-only here.
+        ImTable::add("Name");
+        ImGui::TextUnformatted(nested.node->name.c_str());
+      } else {
+        // The name belongs to the object itself, not the prefab, so it stays editable even
+        // on a locked prefab instance.
+        ImTable::add("Name");
+        ImGui::PushID("Name");
+        if(ImGui::InputText("##Name", &obj->name)) {
+          Editor::UndoRedo::getHistory().markChanged("Edit Name");
+        }
+        ImGui::PopID();
 
-      int idProxy = obj->id;
-      ImTable::add("ID", idProxy);
-      obj->id = static_cast<uint16_t>(idProxy);
+        if(isPrefabInst) {
+          ImTable::add("Prefab");
 
-      //ImTable::add("UUID");
-      //ImGui::Text("0x%16lX", obj->uuid);
+          bool editing = ctx.isPrefabEditing(obj->uuid);
+          auto name = std::string{ICON_MDI_PENCIL " "};
+          name += editing ? ("Back to Instance") : ("Edit '" + srcObj->name + "'");
 
-      if(isPrefabInst) {
-        ImTable::add("Prefab");
-
-        auto name = std::string{ICON_MDI_PENCIL " "};
-        name += obj->isPrefabEdit ? ("Back to Instance") : ("Edit '" + srcObj->name + "'");
-
-        if(ImGui::Button(name.c_str())) {
-          if (obj->isPrefabEdit) {
-            ctx.project->getAssets().markPrefabDirty(prefab->uuid.value);
+          if(ImGui::Button(name.c_str())) {
+            if (editing) {
+              ctx.project->getAssets().markPrefabDirty(prefab->uuid.value);
+              ctx.prefabEditUUID = 0;
+            } else {
+              ctx.prefabEditUUID = obj->uuid;
+            }
           }
-          obj->isPrefabEdit = !obj->isPrefabEdit;
         }
       }
 
@@ -319,11 +589,42 @@ void Editor::ObjectInspector::draw() {
 
   if(ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
   {
-    if(ImTable::start("Transform", obj.get()))
+    if(ImTable::start("Transform", tableObj))
     {
-      ImTable::addObjProp("Pos", srcObj->pos);
+      ImTable::addObjProp(
+        "Position",
+        xfSrc->pos,
+        Editor::TransformUtils::preserveChildTransformsDuringEdit<glm::vec3>(obj.get(), [](glm::vec3 *val) -> bool {
+          // Use the standard vector editor while preserving child offsets
+          return ImTable::typedInput<glm::vec3>(val);
+        }),
+        nullptr
+      );
 
-      if(srcObj->proportionalScale)
+      ImTable::addObjProp(
+        "Rotation",
+        xfSrc->rot,
+        Editor::TransformUtils::preserveChildTransformsDuringEdit<glm::quat>(obj.get(), [](glm::quat *val) -> bool {
+          // Use the standard quaternion editor while preserving child offsets
+          return ImTable::typedInput<glm::quat>(val);
+        }),
+        nullptr
+      );
+
+      // icon to toggle between quaternion and euler
+      ImGui::SameLine();
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 32_px);
+      if(ImGui::IconButton(ctx.prefs.showRotAsEuler ? ICON_MDI_AXIS_Z_ROTATE_CLOCKWISE : ICON_MDI_SPHERE, {24_px, 24_px})) {
+        ImGui::ClearActiveID();
+        ctx.prefs.showRotAsEuler = !ctx.prefs.showRotAsEuler;
+        ctx.prefs.save();
+      }
+      ImGui::SetItemTooltip(ctx.prefs.showRotAsEuler
+        ? "Change to Quaternion"
+        : "Change to Euler (degrees)"
+      );
+
+      if(xfSrc->proportionalScale)
       {
         std::function<bool(glm::vec3*)> cb = [](glm::vec3 *val) -> bool {
           glm::vec3 scale = *val;
@@ -348,36 +649,34 @@ void Editor::ObjectInspector::draw() {
           *val = scale * ratio;
           return ratio != 1.0f;
         };
-        ImTable::addObjProp("Scale", srcObj->scale, cb, nullptr);
+        ImTable::addObjProp(
+          "Scale",
+          xfSrc->scale,
+          Editor::TransformUtils::preserveChildTransformsDuringEdit<glm::vec3>(obj.get(), cb),
+          nullptr
+        );
       } else {
-        ImTable::addObjProp("Scale", srcObj->scale);
+        ImTable::addObjProp(
+          "Scale",
+          xfSrc->scale,
+          Editor::TransformUtils::preserveChildTransformsDuringEdit<glm::vec3>(obj.get(), [](glm::vec3 *val) -> bool {
+            // Use the standard vector editor while preserving child offsets
+            return ImTable::typedInput<glm::vec3>(val);
+          }),
+          nullptr
+        );
       }
 
       // icon to toggle between proportional and independent scale
       ImGui::SameLine();
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 32_px);
-      if(ImGui::IconButton(srcObj->proportionalScale ? ICON_MDI_LINK_VARIANT : ICON_MDI_LINK_VARIANT_OFF, {24_px, 24_px})) {
+      if(ImGui::IconButton(xfSrc->proportionalScale ? ICON_MDI_LINK_VARIANT : ICON_MDI_LINK_VARIANT_OFF, {24_px, 24_px})) {
         ImGui::ClearActiveID();
-        srcObj->proportionalScale = !srcObj->proportionalScale;
+        xfSrc->proportionalScale = !xfSrc->proportionalScale;
       }
-      ImGui::SetItemTooltip(srcObj->proportionalScale
+      ImGui::SetItemTooltip(xfSrc->proportionalScale
         ? "Change to Independent Scale"
         : "Change to Proportional Scale"
-      );
-
-      ImTable::addObjProp("Rot", srcObj->rot);
-
-      // icon to toggle between quaternion and euler
-      ImGui::SameLine();
-      ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 32_px);
-      if(ImGui::IconButton(ctx.prefs.showRotAsEuler ? ICON_MDI_AXIS_Z_ROTATE_CLOCKWISE : ICON_MDI_SPHERE, {24_px, 24_px})) {
-        ImGui::ClearActiveID();
-        ctx.prefs.showRotAsEuler = !ctx.prefs.showRotAsEuler;
-        ctx.prefs.save();
-      }
-      ImGui::SetItemTooltip(ctx.prefs.showRotAsEuler
-        ? "Change to Quaternion"
-        : "Change to Euler (degrees)"
       );
 
       ImTable::end();
@@ -386,23 +685,53 @@ void Editor::ObjectInspector::draw() {
 
   uint64_t compDelUUID = 0;
   Project::Component::Entry *compCopy = nullptr;
+  // Store a deferred reorder request so the component vector is not modified while drawing
+  ComponentReorderRequest compReorder{};
 
-  auto drawComp = [&](Project::Object* obj, Project::Component::Entry &comp, bool isInstance)
+  // viaPath: resolve component props through the active nested cascade (Path) rather than
+  // a fresh component layer (Dispatch). True only for a nested override target.
+  // Draw the component and return whether its header is open for the next insertion marker
+  auto drawComp = [&](Project::Object* obj, Project::Object *owner, Project::Component::Entry &comp, bool isInstance, bool viaPath) -> bool
   {
     ImTable::PrefabEditScope prefabScope(isInstance);
     ImGui::PushID(&comp);
 
     auto &def = Project::Component::TABLE[comp.id];
     auto name = std::string{def.icon} + "  " + comp.name;
-    if (ImGui::CollapsingHeader(name.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+
+    ImGui::SetNextItemAllowOverlap();
+    bool headerOpen = ImGui::CollapsingHeader(name.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+    const bool locked = ImTable::isPrefabLocked(obj);
+    const bool headerRightClicked = !locked && ImGui::IsItemClicked(ImGuiMouseButton_Right);
+
+    // Starting to drag
+    if (!locked && ImGui::BeginDragDropSource()) {
+      // Start component reordering from the dragged header
+      ComponentDragPayload payload{
+        .owner = owner,
+        .compUUID = comp.uuid
+      };
+      ImGui::SetDragDropPayload("COMPONENT", &payload, sizeof(payload));
+      ImGui::TextUnformatted(name.c_str());
+      ImGui::EndDragDropSource();
+    }
+
+    // Faint help icon near the right edge of the header
+    if (def.docSlug && def.docSlug[0]) {
+      const float helpSize = 19_px;
+      ImGui::SameLine(ImGui::GetContentRegionMax().x - helpSize - 4_px);
+      ImGui::HelpIcon(def.docSlug, "Open Docs", helpSize);
+    }
+
+    if (headerOpen)
     {
-      if(!ImTable::isPrefabLocked(obj))
+      if(!locked)
       {
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        if (headerRightClicked) {
           ImGui::OpenPopup("CompCtx");
         }
 
-        if(ImGui::BeginPopupContextItem("CompCtx"))
+        if(ImGui::BeginPopup("CompCtx"))
         {
           if (ImGui::MenuItem(ICON_MDI_CONTENT_COPY " Duplicate")) {
             compCopy = &comp;
@@ -414,23 +743,51 @@ void Editor::ObjectInspector::draw() {
         }
       }
 
+      std::optional<PropScope::Dispatch> dispatch;
+      std::optional<PropScope::Path> compPath;
+      if(viaPath) compPath.emplace(comp.uuid);
+      else        dispatch.emplace(obj->propOverrides, comp.uuid);
       def.funcDraw(*obj, comp);
     }
     ImGui::PopID();
+    // Let the next insertion marker know if the previous component is folded
+    return headerOpen;
   };
 
-  for (auto &comp : srcObj->components) {
-    drawComp(obj.get(), comp, false);
+  // Track whether the component above the current insertion boundary is folded
+  bool previousComponentCollapsed = false;
+  for (size_t i = 0; i < compSrc->components.size(); ++i) {
+    // Draw the insertion boundary before this component
+    drawComponentInsertTarget(compSrc, i, previousComponentCollapsed, compReorder);
+    // Draw the component and cache its folded state for the next boundary
+    previousComponentCollapsed = !drawComp(tableObj, compSrc, compSrc->components[i], false, compViaPath);
   }
+  // Draw the insertion boundary after the last component
+  drawComponentInsertTarget(compSrc, compSrc->components.size(), previousComponentCollapsed, compReorder);
 
-  if(isPrefabInst && !obj->isPrefabEdit) {
-    for (auto &comp : obj->components) {
-      drawComp(obj.get(), comp, true);
+  // Components added directly to a scene instance (not nested, not in edit mode).
+  if(!nested.isNested && isPrefabInst && !ctx.isPrefabEditing(obj->uuid)) {
+    // Instance-owned components form a separate reorder list
+    previousComponentCollapsed = false;
+    for (size_t i = 0; i < obj->components.size(); ++i) {
+      // Draw the insertion boundary before this instance-owned component
+      drawComponentInsertTarget(obj.get(), i, previousComponentCollapsed, compReorder);
+      // Draw the component and store its folded state for the next boundary
+      previousComponentCollapsed = !drawComp(obj.get(), obj.get(), obj->components[i], true, false);
     }
+    // Draw the insertion boundary after the last instance-owned component
+    drawComponentInsertTarget(obj.get(), obj->components.size(), previousComponentCollapsed, compReorder);
     srcObj = obj.get();
   }
 
-  if (isPrefabInst && obj->isPrefabEdit && prefab) {
+  // Apply the queued move after all component lists have finished drawing
+  if (compReorder.owner) {
+    if (reorderComponent(compReorder.owner, compReorder.compUUID, compReorder.insertIndex)) {
+      UndoRedo::getHistory().markChanged("Move Component");
+    }
+  }
+
+  if (isPrefabInst && ctx.isPrefabEditing(obj->uuid) && prefab) {
     ctx.project->getAssets().markPrefabDirty(prefab->uuid.value);
   }
 
@@ -446,22 +803,35 @@ void Editor::ObjectInspector::draw() {
     srcObj->removeComponent(compDelUUID);
   }
 
-  const char* addLabel = ICON_MDI_PLUS_BOX_OUTLINE " Add Component";
-  ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4_px);
-  ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize(addLabel).x) * 0.5f - 4_px);
-  if (ImGui::Button(addLabel)) {
-    ImGui::OpenPopup("CompSelect");
-  }
-
-  if (ImGui::BeginPopupContextItem("CompSelect"))
+  // Adding components targets the root object, not a nested def node.
+  if(!nested.isNested)
   {
-    for (auto &comp : Project::Component::TABLE_SORTED_BY_NAME) {
-      auto name = std::string{comp.icon} + " " + comp.name;
-      if(ImGui::MenuItem(name.c_str())) {
-        UndoRedo::getHistory().markChanged("Add Component");
-        srcObj->addComponent(comp.id);
-      }
+    const char* addLabel = ICON_MDI_PLUS_BOX_OUTLINE " Add Component";
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4_px);
+    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize(addLabel).x) * 0.5f - 4_px);
+    if (ImGui::Button(addLabel)) {
+      ImGui::OpenPopup("CompSelect");
     }
-    ImGui::EndPopup();
+
+    const ImVec2 windowPos = ImGui::GetWindowPos();
+    const ImVec2 contentRegionMin = ImGui::GetWindowContentRegionMin();
+    const ImVec2 contentRegionMax = ImGui::GetWindowContentRegionMax();
+    const ImVec2 contentMin{windowPos.x + contentRegionMin.x, windowPos.y + contentRegionMin.y};
+    const ImVec2 contentMax{windowPos.x + contentRegionMax.x, windowPos.y + contentRegionMax.y};
+
+    ImRect panelDropRect{contentMin, contentMax};
+    handleScriptComponentDropTarget(srcObj, panelDropRect, true);
+
+    if (ImGui::BeginPopupContextItem("CompSelect"))
+    {
+      for (auto &comp : Project::Component::TABLE_SORTED_BY_NAME) {
+        auto name = std::string{comp.icon} + " " + comp.name;
+        if(ImGui::MenuItem(name.c_str())) {
+          UndoRedo::getHistory().markChanged("Add Component");
+          srcObj->addComponent(comp.id);
+        }
+      }
+      ImGui::EndPopup();
+    }
   }
 }

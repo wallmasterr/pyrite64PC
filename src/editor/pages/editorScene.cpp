@@ -9,6 +9,7 @@
 #include "imgui_internal.h"
 #include "../actions.h"
 #include "../undoRedo.h"
+#include "../selectionUtils.h"
 #include "../../context.h"
 
 #define IMVIEWGUIZMO_IMPLEMENTATION 1
@@ -43,22 +44,125 @@ Editor::Scene::Scene()
     return false;
   });
   needsSanityCheck = true;
+
+  loadSession();
+  if(viewports.empty()) addViewport();
+}
+
+void Editor::Scene::addViewport()
+{
+  viewports.push_back(std::make_shared<Viewport3D>(nextViewportWinId));
+  ++nextViewportWinId;
 }
 
 Editor::Scene::~Scene()
 {
+  // The active project's windows are persisted when it is torn down (see persistOpenWindows).
   Editor::Actions::registerAction(Editor::Actions::Type::OPEN_NODE_GRAPH, nullptr);
+}
+
+void Editor::Scene::loadSession()
+{
+  try
+  {
+    auto json = Utils::JSON::loadFile(Utils::Proc::getAppDataPath() / "editorScene.json");
+    if(json.contains("projects")) {
+      for(const auto& [path, w] : json["projects"].items()) {
+        WindowSet ws{};
+        if(w.contains("winModels")) for(const auto& u : w["winModels"]) ws.models.push_back(u.get<uint64_t>());
+        if(w.contains("winGraphs")) for(const auto& u : w["winGraphs"]) ws.graphs.push_back(u.get<uint64_t>());
+        sessionWindows[path] = std::move(ws);
+      }
+    }
+    if(json.contains("viewports") && json["viewports"].is_array()) {
+      for(const auto& v : json["viewports"]) {
+        uint32_t id = v.value("winId", nextViewportWinId);
+        auto vp = std::make_shared<Viewport3D>(id);
+        vp->loadState(v);
+        viewports.push_back(std::move(vp));
+        nextViewportWinId = std::max(nextViewportWinId, id + 1);
+      }
+    }
+  } catch(const std::exception& e) {}
+}
+
+void Editor::Scene::saveSession()
+{
+  nlohmann::json conf{};
+  conf["projects"] = nlohmann::json::object();
+  for(const auto& [path, ws] : sessionWindows) {
+    conf["projects"][path] = { {"winModels", ws.models}, {"winGraphs", ws.graphs} };
+  }
+  conf["viewports"] = nlohmann::json::array();
+  for(const auto& vp : viewports) {
+    conf["viewports"].push_back(vp->saveState());
+  }
+  Utils::FS::saveTextFile(Utils::Proc::getAppDataPath() / "editorScene.json", conf.dump(2));
+}
+
+void Editor::Scene::persistOpenWindows()
+{
+  if(!ctx.project)return;
+  WindowSet ws{};
+  for(const auto& [assetUUID, _] : modelEditors) ws.models.push_back(assetUUID);
+  for(const auto& nodeEditor : nodeEditors) {
+    if(nodeEditor && nodeEditor->getAssetUUID() != 0) ws.graphs.push_back(nodeEditor->getAssetUUID());
+  }
+  sessionWindows[ctx.project->getPath()] = std::move(ws);
+  saveSession();
+}
+
+void Editor::Scene::closeAllEditors()
+{
+  nodeEditors.clear();
+  modelEditors.clear();
+  pendingNodeEditorCloseUUID = 0;
+  pendingNodeEditorClosePopup = false;
+}
+
+void Editor::Scene::onProjectClosing()
+{
+  persistOpenWindows();
+  closeAllEditors();
+  restoredForProject.clear();
+}
+
+void Editor::Scene::restoreWindows()
+{
+  auto it = sessionWindows.find(ctx.project->getPath());
+  if(it == sessionWindows.end())return;
+  for(auto uuid : it->second.models) {
+    if(ctx.project->getAssets().getEntryByUUID(uuid)) openModelEditor(uuid);
+  }
+  for(auto uuid : it->second.graphs) {
+    if(ctx.project->getAssets().getEntryByUUID(uuid)) {
+      nodeEditors.push_back(std::make_shared<NodeEditor>(uuid));
+    }
+  }
 }
 
 void Editor::Scene::openModelEditor(uint64_t assetUUID)
 {
-  modelEditors.push_back(
-    std::make_unique<ModelEditor>(assetUUID)
-  );
+  auto it = modelEditors.find(assetUUID);
+  if(it != modelEditors.end()) {
+    it->second->focus();
+  } else {
+    modelEditors[assetUUID] = std::make_unique<ModelEditor>(assetUUID);
+  }
 }
 
 void Editor::Scene::draw()
 {
+  // Safe point to destroy viewports closed last frame: their render has completed.
+  viewportsPendingClose.clear();
+
+  // On a project switch, close the previous project's windows and restore this one's.
+  if(ctx.project && ctx.project->getPath() != restoredForProject) {
+    closeAllEditors();
+    restoredForProject = ctx.project->getPath();
+    restoreWindows();
+  }
+
   float HEIGHT_TOP_BAR = 28_px;
   float HEIGHT_STATUS_BAR = 24_px;
 
@@ -126,11 +230,56 @@ void Editor::Scene::draw()
     ImGui::DockBuilderFinish(dockSpaceID);
   }
 
+  hoveredViewport = nullptr;
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2_px, 2_px));
-  ImGui::Begin("3D-Viewport");
-    viewport3d.draw();
-  ImGui::End();
+  std::vector<size_t> viewportsToClose{};
+  for(size_t i = 0; i < viewports.size(); ++i) {
+    auto &vp = viewports[i];
+    bool open = true;
+    std::string title = vp->getWindowTitle();
+    if(ImGui::Begin(title.c_str(), &open)) {
+      // Right-clicking the docked tab offers opening another viewport.
+      ImGuiWindow* win = ImGui::GetCurrentWindow();
+      if(win->DockIsActive &&
+         ImGui::IsMouseHoveringRect(win->DC.DockTabItemRect.Min, win->DC.DockTabItemRect.Max, false) &&
+         ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        ImGui::OpenPopup("ViewportTabCtx");
+      }
+      if(ImGui::BeginPopup("ViewportTabCtx")) {
+        if(ImGui::MenuItem(ICON_MDI_PLUS " New Viewport")) wantNewViewport = true;
+        ImGui::EndPopup();
+      }
+      vp->draw();
+      if(vp->isViewHovered()) hoveredViewport = vp;
+    }
+    ImGui::End();
+    if(!open) viewportsToClose.push_back(i);
+  }
   ImGui::PopStyleVar(1);
+
+  bool viewportsChanged = !viewportsToClose.empty();
+  for(auto it = viewportsToClose.rbegin(); it != viewportsToClose.rend(); ++it) {
+    viewports[*it]->detach();
+    viewportsPendingClose.push_back(std::move(viewports[*it]));
+    viewports.erase(viewports.begin() + *it);
+  }
+  if(wantNewViewport) {
+    wantNewViewport = false;
+    addViewport();
+    viewportsChanged = true;
+  }
+  if(wantResetLayout) {
+    wantResetLayout = false;
+    // Collapse to a single default viewport so the rebuilt layout has a center window.
+    hoveredViewport = nullptr;
+    for(auto &vp : viewports) { vp->detach(); viewportsPendingClose.push_back(std::move(vp)); }
+    viewports.clear();
+    nextViewportWinId = 0;
+    addViewport();
+    viewportsChanged = true;
+    ImGui::DockBuilderRemoveNode(dockSpaceID);
+  }
+  if(viewportsChanged) saveSession();
 
   std::vector<uint32_t> delIndices{};
   for(uint32_t i = 0; i < nodeEditors.size(); ++i) {
@@ -188,11 +337,13 @@ void Editor::Scene::draw()
     ImGui::EndPopup();
   }
 
-  for(auto &modelEditor : modelEditors) {
-    if (!modelEditor->draw(dockSpaceID)) {
-      //delIndices.push_back(&modelEditor - &modelEditors[0]);
+  std::vector<uint64_t> delUUIDs{};
+  for(auto &[uuid, editor] : modelEditors) {
+    if (!editor->draw(dockSpaceID)) {
+      delUUIDs.push_back(uuid);
     }
   }
+  for(auto &uuid : delUUIDs)modelEditors.erase(uuid);
 
   ImGui::Begin("Object");
     objectInspector.draw();
@@ -221,7 +372,6 @@ void Editor::Scene::draw()
     ImGui::Begin("Layers");
       layerInspector.draw();
     ImGui::End();
-
   }
 
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2_px, 2_px));
@@ -256,7 +406,7 @@ void Editor::Scene::draw()
   }
 
   if (projectSettingsOpen) {
-    ImVec2 windowSize{500_px,300_px};
+    ImVec2 windowSize{600_px,400_px};
     auto screenSize = ImGui::GetMainViewport()->WorkSize;
     ImGui::SetNextWindowPos({(screenSize.x - windowSize.x) / 2, (screenSize.y - windowSize.y) / 2}, ImGuiCond_Appearing, {0.0f, 0.0f});
     ImGui::SetNextWindowSize(windowSize, ImGuiCond_Appearing);
@@ -264,7 +414,10 @@ void Editor::Scene::draw()
     // Thick borders
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0_px);
     ImGui::PushStyleColor(ImGuiCol_Border, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-    ImGui::Begin(ICON_MDI_FILE_COG_OUTLINE " Project Settings", &projectSettingsOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    ImGui::Begin(ICON_MDI_FILE_COG_OUTLINE " Project Settings", &projectSettingsOpen,
+      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking |
+      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+    );
     if (projectSettings.draw()) {
       projectSettingsOpen = false;
     }
@@ -332,14 +485,49 @@ void Editor::Scene::draw()
 
       if(ImGui::BeginMenu("View"))
       {
+        if(ImGui::MenuItem(ICON_MDI_PLUS " New Viewport")) wantNewViewport = true;
+        ImGui::Separator();
         if(ImGui::MenuItem(ICON_MDI_MAGNIFY_PLUS " Zoom In")) {
           ImGui::Theme::changeZoom(+1);
         }
         if(ImGui::MenuItem(ICON_MDI_MAGNIFY_MINUS "Zoom Out")) {
           ImGui::Theme::changeZoom(-1);
         }
-        if(ImGui::MenuItem("Reset Layout"))ImGui::DockBuilderRemoveNode(dockSpaceID);
+        if(ImGui::BeginMenu(ICON_MDI_PALETTE " Theme"))
+        {
+          for(const auto &theme : ImGui::Theme::getThemes())
+          {
+            bool selected = theme.id == ImGui::Theme::getCurrentTheme();
+            if(ImGui::MenuItem(theme.name.c_str(), nullptr, selected))
+            {
+              ImGui::Theme::setTheme(theme.id);
+              ctx.prefs.themeName = theme.id;
+              ctx.prefs.save();
+            }
+          }
+          ImGui::EndMenu();
+        }
+        if(ImGui::MenuItem("Reset Layout"))wantResetLayout = true;
         ImGui::EndMenu();
+      }
+
+      // Centered button to leave prefab-edit mode
+      if(auto scene = ctx.project->getScenes().getLoadedScene()) {
+        if(auto *editObj = Editor::SelectionUtils::getPrefabEditObject(*scene)) {
+          std::string label = ICON_MDI_PENCIL_OFF " Exit Prefab Edit";
+          float w = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+          ImGui::SetCursorPosX((ImGui::GetWindowWidth() - w) * 0.5f);
+          ImVec4 red = ImGui::Theme::getColor("prefabEditBg", ImVec4{0.745f, 0.216f, 0.216f, 1.0f});
+          red.w = 1.0f;
+          ImGui::PushStyleColor(ImGuiCol_Button, red);
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{red.x * 1.25f, red.y * 1.25f, red.z * 1.25f, 1.0f});
+          ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4{red.x * 0.85f, red.y * 0.85f, red.z * 0.85f, 1.0f});
+          if(ImGui::Button(label.c_str())) {
+            ctx.project->getAssets().markPrefabDirty(editObj->uuidPrefab.value);
+            ctx.prefabEditUUID = 0;
+          }
+          ImGui::PopStyleColor(3);
+        }
       }
 
       ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 40_px);
@@ -380,8 +568,10 @@ void Editor::Scene::draw()
 
   ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5_px);
   ImGui::PushFont(ImGui::Theme::getFontMono(), 16_px);
-  ImVec4 perfColor{1.0f,1.0f,1.0f,0.4f};
-  if (io.Framerate < 45) perfColor = {1.0f, 0.5f, 0.5f, 1.0f};
+  
+  ImVec4 textCol = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+  ImVec4 perfColor{textCol.x, textCol.y, textCol.z, 0.55f};
+  if (io.Framerate < 45) perfColor = {0.85f, 0.30f, 0.30f, 1.0f};
   ImGui::TextColored(perfColor, "%d FPS | History: %d/%d %s | CPU: %.2fms",
     (int)roundf(io.Framerate),
     UndoRedo::getHistory().getUndoCount(),
@@ -419,10 +609,10 @@ void Editor::Scene::draw()
     posX -= 8_px;
   }
 
-  perfColor = {1.0f,1.0f,1.0f,0.4f};
+  perfColor = {textCol.x, textCol.y, textCol.z, 0.45f};
   std::string txtInfo = "v" PYRITE_VERSION;
   #ifndef NDEBUG
-    perfColor = {1.0f,1.0f,1.0f,0.6f};
+    perfColor = {textCol.x, textCol.y, textCol.z, 0.65f};
     txtInfo += " [DEBUG]";
   #endif
 
@@ -435,6 +625,7 @@ void Editor::Scene::draw()
   // Global keyboard shortcuts
   if (!ImGui::GetIO().WantTextInput) {
     bool isCtrl = ImGui::GetIO().KeyCtrl;
+    bool isShift = ImGui::GetIO().KeyShift;
     
     // Undo: Ctrl+Z
     if (isCtrl && ImGui::IsKeyPressed(ImGuiKey_Z)) {
@@ -444,6 +635,12 @@ void Editor::Scene::draw()
     // Redo: Ctrl+Y
     if (isCtrl && ImGui::IsKeyPressed(ImGuiKey_Y)) {
       UndoRedo::getHistory().redo();
+    }
+
+    // Align focused object to the editor camera: Ctrl+Shift+F (uses the hovered viewport)
+    if (isCtrl && isShift && ImGui::IsKeyPressed(ImGuiKey_F)) {
+      auto vp = hoveredViewport ? hoveredViewport : (viewports.empty() ? nullptr : viewports.front());
+      if (vp) vp->alignFocusedObjectToCamera();
     }
 
     // Preferences
@@ -482,5 +679,6 @@ void Editor::Scene::save()
   for(auto &nodeEditor : nodeEditors) {
     nodeEditor->save();
   }
+  persistOpenWindows();
   UndoRedo::getHistory().markSaved();
 }

@@ -7,6 +7,8 @@ p64editor
 pyrite64
 .vscode
 *.pak
+*.ram
 pyrite64.exe
 *.dll
 preferences.json
+*.AppImage

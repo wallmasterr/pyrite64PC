@@ -28,6 +28,8 @@ namespace Project::Component::CollMesh
     Shared::MeshFilter filter{};
     Renderer::Object obj3D{};
     Utils::AABB aabb{};
+    PROP_U32(maskRead);
+    PROP_U32(maskWrite);
   };
 
   std::shared_ptr<void> init(Object &obj) {
@@ -40,6 +42,8 @@ namespace Project::Component::CollMesh
     return Utils::JSON::Builder{}
       .set(data.modelUUID)
       .set(data.filter.meshFilter)
+      .set(data.maskRead)
+      .set(data.maskWrite)
       .doc;
   }
 
@@ -47,6 +51,8 @@ namespace Project::Component::CollMesh
     auto data = std::make_shared<Data>();
     Utils::JSON::readProp(doc, data->modelUUID);
     Utils::JSON::readProp(doc, data->filter.meshFilter);
+    Utils::JSON::readProp(doc, data->maskRead, 0x00u);
+    Utils::JSON::readProp(doc, data->maskWrite, 0x00u);
     return data;
   }
 
@@ -66,9 +72,9 @@ namespace Project::Component::CollMesh
     // we need a part of a collision mesh, by default (and for perf. reasons)
     // the entire mesh is converted by default.
     // generate a unique file for that instance (and do so via a hash to allow sharing)
-    auto meshes = data.filter.filterT3DM(t3dm->t3dmData.models, obj, false);
+    auto meshes = data.filter.filterT3DM(t3dm->model.t3dm.models, obj, false);
     if(meshes.empty()) { // take all by default
-      for(uint32_t i=0; i<t3dm->t3dmData.models.size(); ++i) {
+      for(uint32_t i=0; i<t3dm->model.t3dm.models.size(); ++i) {
         meshes.push_back(i);
       }
     }
@@ -88,7 +94,7 @@ namespace Project::Component::CollMesh
     {
       std::unordered_set<std::string> meshNames{};
       for(auto meshIdx : meshes) {
-        meshNames.insert(t3dm->t3dmData.models[meshIdx].name);
+        meshNames.insert(t3dm->model.t3dm.models[meshIdx].name);
       }
 
       Build::buildT3DCollision(*ctx.project, ctx, meshNames, t3dm->getId(), modelUUID);
@@ -103,6 +109,9 @@ namespace Project::Component::CollMesh
 
     ctx.fileObj.write<uint16_t>(id);
     ctx.fileObj.write<uint8_t>(flags);
+    ctx.fileObj.write<uint8_t>(data.maskRead.resolve(obj.propOverrides));
+    ctx.fileObj.write<uint8_t>(data.maskWrite.resolve(obj.propOverrides));
+
   }
 
   void draw(Object &obj, Entry &entry)
@@ -114,11 +123,13 @@ namespace Project::Component::CollMesh
 
     if (ImTable::start("Comp", &obj)) {
       ImTable::add("Name", entry.name);
+      ImTable::addMultiSelectMask8("Reacts to", data.maskRead.resolve(obj), ctx.project->conf.collLayerNames, "<Nothing>");
+      ImTable::addMultiSelectMask8("Is Affecting", data.maskWrite.resolve(obj), ctx.project->conf.collLayerNames, "<Nothing>");
       ImTable::add("Model");
       //ImGui::InputScalar("##UUID", ImGuiDataType_U64, &data.scriptUUID);
 
       int idx = modelList.size();
-      for (int i=0; i<modelList.size(); ++i) {
+      for (int i=0; i<(int)modelList.size(); ++i) {
         if (modelList[i].getUUID() == data.modelUUID.resolve(obj.propOverrides)) {
           idx = i;
           break;
@@ -128,7 +139,7 @@ namespace Project::Component::CollMesh
       auto getter = [](void*, int idx) -> const char*
       {
         auto &scriptList = ctx.project->getAssets().getTypeEntries(FileType::MODEL_3D);
-        if (idx < 0 || idx >= scriptList.size())return "<Select Model>";
+        if (idx < 0 || idx >= (int)scriptList.size())return "<Select Model>";
         return scriptList[idx].name.c_str();
       };
 
@@ -149,13 +160,13 @@ namespace Project::Component::CollMesh
         bool changed = ImTable::addObjProp("Filter", data.filter.meshFilter);
 
         if(changed || data.filter.cache.empty()) {
-          data.filter.filterT3DM(selModel->t3dmData.models, obj, false);
+          data.filter.filterT3DM(selModel->model.t3dm.models, obj, false);
         }
 
         for(auto idx : data.filter.cache) {
           ImGui::Text("%s@%s",
-            selModel->t3dmData.models[idx].name.c_str(),
-            selModel->t3dmData.models[idx].materialName.c_str()
+            selModel->model.t3dm.models[idx].name.c_str(),
+            selModel->model.t3dm.models[idx].materialName.c_str()
           );
         }
 
@@ -189,15 +200,19 @@ namespace Project::Component::CollMesh
       obj.rot.resolve(obj.propOverrides),
       obj.pos.resolve(obj.propOverrides),
       skew, persp);
-    data.obj3D.uniform.mat.flags |= DRAW_SHADER_COLLISION;
 
     auto asset = ctx.project->getAssets().getEntryByUUID(data.modelUUID.value);
     if (!asset || !asset->mesh3D) {
       return;
     }
-    auto &meshes = data.filter.filterT3DM(asset->t3dmData.models, obj, false);
+    auto &meshes = data.filter.filterT3DM(asset->model.t3dm.models, obj, false);
 
-    data.obj3D.draw(pass, cmdBuff, meshes);
+    data.obj3D.draw(pass, cmdBuff, {
+      .partsIndices = meshes,
+      .model = &asset->model,
+      .obj = obj,
+      .isCollision = true
+    });
 
     bool isSelected = ctx.isObjectSelected(obj.uuid);
     if (isSelected)
@@ -210,8 +225,9 @@ namespace Project::Component::CollMesh
         aabbCol = {0xFF,0xAA,0x00,0xFF};
       }
 
-      Utils::Mesh::addLineBox(*vp.getLines(), center, halfExt, aabbCol);
-      Utils::Mesh::addLineBox(*vp.getLines(), center, halfExt + 0.002f, aabbCol);
+      auto rot = obj.rot.resolve(obj.propOverrides);
+      Utils::Mesh::addLineBox(*vp.getLines(), center, halfExt, aabbCol, rot);
+      Utils::Mesh::addLineBox(*vp.getLines(), center, halfExt + 0.002f, aabbCol, rot);
     }
   }
 

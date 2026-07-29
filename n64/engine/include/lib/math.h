@@ -17,6 +17,11 @@ namespace P64::Math
 {
   constexpr float SQRT_2_INV = 0.70710678118f;
   constexpr float PI = 3.14159265358979f;
+  constexpr fm_quat_t QUAT_IDENTITY = {0.0f, 0.0f, 0.0f, 1.0f};
+  constexpr fm_vec3_t VEC3_UP = {0.0f, 1.0f, 0.0f};
+  constexpr fm_vec3_t VEC3_RIGHT = {1.0f, 0.0f, 0.0f};
+  constexpr fm_vec3_t VEC3_FORWARD = {0.0f, 0.0f, -1.0f};
+  constexpr fm_vec3_t VEC3_ZERO = {0.0f, 0.0f, 0.0f};
 
   constexpr uint32_t alignUp(uint32_t val, uint32_t alignTo) {
     return (val + (alignTo - 1)) & ~(alignTo - 1);
@@ -126,4 +131,6 @@ namespace P64::Math
     fm_vec3_norm(&res, &res);
     return res;
   }
+
+  fm_quat_t quatFromInvRotMat(const fm_mat4_t &m);
 }

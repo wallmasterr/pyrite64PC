@@ -14,9 +14,13 @@
 #include "../../../renderer/scene.h"
 #include "../../../utils/meshGen.h"
 #include "../../../shader/defines.h"
-#include "../shared/material.h"
+#include "../shared/materialInstance.h"
+#include "../../../editor/pages/editorScene.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
+#include "../../../editor/pages/parts/assets/matInstanceEditor.h"
+#include "../../../renderer/animation.h"
+#include "../../../renderer/skeleton.h"
 #include "glm/gtx/matrix_decompose.hpp"
 
 #include "../shared/meshFilter.h"
@@ -27,8 +31,11 @@ namespace Project::Component::AnimModel
   {
     PROP_U64(model);
     PROP_S32(layerIdx);
+    PROP_STRING(previewAnimName);
 
-    Shared::Material material{};
+    Shared::MaterialInstance material{};
+    std::shared_ptr<Renderer::Skeleton> skeleton{nullptr};
+    Renderer::Animation anim{};
 
     Renderer::Object obj3D{};
     Utils::AABB aabb{};
@@ -44,6 +51,7 @@ namespace Project::Component::AnimModel
     return Utils::JSON::Builder{}
       .set(data.model)
       .set(data.layerIdx)
+      .set(data.previewAnimName)
       .set("material", data.material.serialize())
       .doc;
   }
@@ -51,6 +59,7 @@ namespace Project::Component::AnimModel
   std::shared_ptr<void> deserialize(nlohmann::json &doc) {
     auto data = std::make_shared<Data>();
     Utils::JSON::readProp(doc, data->layerIdx);
+    Utils::JSON::readProp(doc, data->previewAnimName);
     Utils::JSON::readProp(doc, data->model);
 
     data->material.deserialize(
@@ -74,7 +83,11 @@ namespace Project::Component::AnimModel
     ctx.fileObj.write<uint16_t>(id);
     ctx.fileObj.write<uint8_t>(data.layerIdx.resolve(obj));
     ctx.fileObj.write<uint8_t>(0); // flags, unused
-    data.material.build(ctx.fileObj, obj);
+
+    data.material.validateWithModel(
+      ctx.project->getAssets().getEntryByUUID(data.model.value)->model
+    );
+    data.material.build(ctx.fileObj, ctx, obj);
   }
 
   void draw(Object &obj, Entry &entry)
@@ -89,6 +102,11 @@ namespace Project::Component::AnimModel
       ImTable::add("Name", entry.name);
       ImTable::addAssetVecComboBox("Model", modelList, data.model.value, [&data](auto) { data.obj3D.removeMesh(); });
 
+      ImTable::add("");
+      if(ImGui::Button(ICON_MDI_PENCIL " Open Model Editor")) {
+        ctx.editorScene->openModelEditor(data.model.value);
+      }
+
       std::vector<const char*> layerNames{};
       for (auto &layer : scene->conf.layers3D) {
         layerNames.push_back(layer.name.value.c_str());
@@ -99,31 +117,40 @@ namespace Project::Component::AnimModel
           return ImGui::Combo("##", layer, layerNames.data(), layerNames.size());
         }, nullptr);
 
+      auto asset = ctx.project->getAssets().getEntryByUUID(data.model.value);
+      if (asset && asset->mesh3D)
+      {
+          int selIdx = 0;
+          std::vector<const char*> animNames{};
+          animNames.push_back("<Default Pose>");
+          for(auto &anim : asset->model.t3dm.animations) {
+            if(selIdx == 0 && anim.name == data.previewAnimName.value) {
+              selIdx = animNames.size();
+            }
+            animNames.push_back(anim.name.c_str());
+          }
+
+          ImTable::add("Preview Anim.");
+
+          ImGui::Combo("##", &selIdx, animNames.data(), animNames.size());
+          if(selIdx >= 0 && selIdx < (int)animNames.size()) {
+            data.previewAnimName.value = animNames[selIdx];
+          }
+      }
+
 
       ImTable::end();
 
-      if(ImGui::CollapsingSubHeader("Material Sets", ImGuiTreeNodeFlags_DefaultOpen) && ImTable::start("Mat", &obj))
-      {
-        ImTable::addObjProp<int32_t>("Depth", data.material.depth, [](int32_t *depth)
-        {
-          std::array<const char*, 4> items = {"None", "Read", "Write", "Read+Write"};
-          return ImGui::Combo("##", depth, items.data(), items.size());
-        }, &data.material.setDepth);
-
-        ImTable::addObjProp("Prim-Color", data.material.prim, &data.material.setPrim);
-        ImTable::addObjProp("Env-Color", data.material.env, &data.material.setEnv);
-        ImTable::addObjProp("Fresnel", data.material.fresnel, &data.material.setFresnel);
-        if(data.material.fresnel.resolve(obj.propOverrides) != 0)
-        {
-          ImTable::addObjProp("Fres-Color", data.material.fresnelColor);
-        }
-        // ImTable::addObjProp("Lighting", data.material.lighting, &data.material.setLighting);
-
-        ImTable::end();
-      }
-
+      Editor::MatInstanceEditor::draw(data.material, obj, data.model.value);
       ImGui::Dummy({0,4});
+    }
+  }
 
+  void drawCopyPass(Object& obj, Entry &entry, Editor::Viewport3D &vp, SDL_GPUCommandBuffer* cmdBuff, SDL_GPUCopyPass* pass)
+  {
+    Data &data = *static_cast<Data*>(entry.data.get());
+    if(data.skeleton) {
+      data.skeleton->update(*pass);
     }
   }
 
@@ -138,6 +165,7 @@ namespace Project::Component::AnimModel
         }
         data.aabb = asset->mesh3D->getAABB();
         data.obj3D.setMesh(asset->mesh3D);
+        data.skeleton = std::make_shared<Renderer::Skeleton>(ctx.gpu, asset->model, asset->conf.baseScale);
       }
     }
 
@@ -145,17 +173,6 @@ namespace Project::Component::AnimModel
     {
       data.obj3D.uniform.mat.flags = 0;
       if(data.layerIdx.value == 0)data.obj3D.uniform.mat.flags |= T3D_FLAG_NO_LIGHT;
-    }
-
-
-    data.obj3D.overrides.setPrim = data.material.setPrim.resolve(obj.propOverrides);
-    data.obj3D.overrides.setEnv = data.material.setEnv.resolve(obj.propOverrides);
-
-    if(data.obj3D.overrides.setPrim) {
-      data.obj3D.overrides.colPrim = data.material.prim.resolve(obj.propOverrides);
-    }
-    if(data.obj3D.overrides.setEnv) {
-      data.obj3D.overrides.colEnv = data.material.env.resolve(obj.propOverrides);
     }
 
     data.obj3D.setObjectID(obj.uuid);
@@ -174,7 +191,22 @@ namespace Project::Component::AnimModel
       return;
     }
 
-    data.obj3D.draw(pass, cmdBuff);
+    for(auto &anim : asset->model.t3dm.animations)
+    {
+      if(anim.name == data.previewAnimName.value) {
+        float deltaTime = ImGui::GetIO().DeltaTime;
+        data.anim.update(anim, data.skeleton, deltaTime);
+        break;
+      }
+    }
+
+    data.skeleton->use(pass);
+    data.obj3D.draw(pass, cmdBuff, {
+      .partsIndices = {},
+      .model = &asset->model,
+      .matInstance = &data.material,
+      .obj = obj
+    });
 
     bool isSelected = ctx.isObjectSelected(obj.uuid);
     if (isSelected)
@@ -188,16 +220,26 @@ namespace Project::Component::AnimModel
         aabbCol = {0xFF,0xAA,0x00,0xFF};
       }
 
-      Utils::Mesh::addLineBox(*vp.getLines(), center, halfExt, aabbCol);
-      Utils::Mesh::addLineBox(*vp.getLines(), center, halfExt + 0.002f, aabbCol);
+      auto rot = obj.rot.resolve(obj.propOverrides);
+      Utils::Mesh::addLineBox(*vp.getLines(), center, halfExt, aabbCol, rot);
+      Utils::Mesh::addLineBox(*vp.getLines(), center, halfExt + 0.002f, aabbCol, rot);
     }
   }
 
   Utils::AABB getAABB(Object &obj, Entry &entry) {
     Data &data = *static_cast<Data*>(entry.data.get());
-    Utils::AABB aabb = data.aabb;
-    aabb.min *= (float)0xFFFF;
-    aabb.max *= (float)0xFFFF;
+    Utils::AABB aabb{};
+    auto asset = ctx.project->getAssets().getEntryByUUID(data.model.value);
+    if (!asset) return aabb;
+
+    // Use the imported bind-pose geometry so bounds are available before first render
+    for (const auto &model : asset->model.t3dm.models) {
+      for (const auto &triangle : model.triangles) {
+        for (const auto &vert : triangle.vert) {
+          aabb.addPoint({vert.pos[0], vert.pos[1], vert.pos[2]});
+        }
+      }
+    }
     return aabb;
   }
 }

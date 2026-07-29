@@ -5,10 +5,12 @@
 #include "../components.h"
 #include "../../../context.h"
 #include "../../../editor/imgui/helper.h"
+#include "../../../editor/imgui/notification.h"
 #include "../../../utils/json.h"
 #include "../../../utils/jsonBuilder.h"
 #include "../../../utils/binaryFile.h"
 #include "../../../utils/logger.h"
+#include "../../../utils/proc.h"
 #include "../../../utils/string.h"
 
 namespace Project::Component::Code
@@ -16,12 +18,29 @@ namespace Project::Component::Code
   struct Data
   {
     uint64_t scriptUUID{0};
+    bool openScriptComboBox{true}; // Open the Script ComboBox when the component is added
     std::unordered_map<std::string, PropString> args{};
   };
 
   std::shared_ptr<void> init(Object &obj) {
     auto data = std::make_shared<Data>();
     return data;
+  }
+
+  /**
+   * Assigns a Script to a Code component.
+   * @param entry Code component entry to assign the Script to.
+   * @param scriptUUID UUID of the Script.
+   * @param openScriptComboBox true to auto-open the combo box.
+   */
+  void setScript(Entry &entry, uint64_t scriptUUID, bool openScriptComboBox)
+  {
+    // Reinterpret the generic component payload as Code-specific data
+    Data &data = *static_cast<Data*>(entry.data.get());
+    // Set the Script UUID to use
+    data.scriptUUID = scriptUUID;
+    // Preserve the requested combo-box behavior for the next draw call
+    data.openScriptComboBox = openScriptComboBox;
   }
 
   nlohmann::json serialize(const Entry &entry) {
@@ -41,6 +60,7 @@ namespace Project::Component::Code
   std::shared_ptr<void> deserialize(nlohmann::json &doc) {
     auto data = std::make_shared<Data>();
     data->scriptUUID = doc["script"].get<uint64_t>();
+    data->openScriptComboBox = false;
     if (doc.contains("args")) {
       auto &argsObj = doc["args"];
       for (auto& [key, val] : argsObj.items()) {
@@ -80,11 +100,22 @@ namespace Project::Component::Code
         ctx.fileObj.write<uint32_t>(ctx.assetUUIDToIdx[uuid]);
       } else if(field.type == Utils::DataType::OBJECT_REF) {
         uint32_t uuid = static_cast<uint32_t>(Utils::parseU64(val));
-        auto refObj = ctx.scene->getObjectByUUID(uuid);
-        uint16_t objId = refObj ? refObj->id : 0;
+        auto refObj = ctx.scene ? ctx.scene->getObjectByUUID(uuid) : nullptr;
+        uint16_t objId = refObj ? refObj->runtimeId : 0;
         ctx.fileObj.write<uint32_t>(objId);
+      } else if(field.type == Utils::DataType::PREFAB){
+        uint64_t uuid = Utils::parseU64(val);
+        ctx.fileObj.write<uint32_t>(ctx.assetUUIDToIdx[uuid]);
       } else {
-        ctx.fileObj.writeAs(val, field.type);
+        try
+        {
+          ctx.fileObj.writeAs(val, field.type);
+        } catch (...) {
+          std::string error = script->getName() + ": Invalid argument value '" + val + "' for '" + field.name + "' "
+            "(type-id " + std::to_string(field.type) + ")";
+          Utils::Logger::log(error, Utils::Logger::LEVEL_ERROR);
+          throw std::runtime_error(error);
+        }
       }
     }
   }
@@ -98,9 +129,27 @@ namespace Project::Component::Code
 
     if (ImTable::start("Comp", &obj)) {
       ImTable::add("Name", entry.name);
-      ImTable::addAssetVecComboBox("Script", scriptList, data.scriptUUID);
+      ImTable::add("Script");
+
+      // Reserve space for the edit button so the Script combo box keeps its full row layout
+      const float editButtonWidth = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.x * 2;
+      const float spacing = ImGui::GetStyle().ItemSpacing.x;
+      ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - editButtonWidth - spacing);
+      ImTable::addAssetVecComboBox("", scriptList, data.scriptUUID, true);
 
       auto script = assets.getEntryByUUID(data.scriptUUID);
+      ImGui::SameLine();
+      if (!script) ImGui::BeginDisabled();
+
+      // Open the selected Script in an external application
+      if (ImGui::Button(ICON_MDI_PENCIL, {editButtonWidth, 0}) && script) {
+        if (!Utils::Proc::openFile(script->path)) {
+          Editor::Noti::add(Editor::Noti::Type::ERROR, "Failed to open File. This may be due to WSL path conversion failure.");
+        }
+      }
+      if (!script) ImGui::EndDisabled();
+      ImGui::SetItemTooltip("Edit Script");
+
       if (script) {
 
         ImTable::add("Arguments:");
@@ -108,6 +157,7 @@ namespace Project::Component::Code
           ImGui::Text("(None)");
         }
 
+        const bool isInstanceMode = ImTable::isPrefabLocked(&obj);
         for (auto &field : script->params.fields)
         {
           std::string name{};
@@ -120,34 +170,102 @@ namespace Project::Component::Code
             data.args[field.name].id = Utils::Hash::randomU64();
           }
 
-          if(field.type == Utils::DataType::ASSET_SPRITE)
+          auto &prop = data.args[field.name];
+          if(field.type == Utils::DataType::ASSET_SPRITE ||
+             field.type == Utils::DataType::OBJECT_REF ||
+             field.type == Utils::DataType::PREFAB)
           {
-            const auto &assets = ctx.project->getAssets().getTypeEntries(FileType::IMAGE);
-            uint64_t uuid = Utils::parseU64(data.args[field.name].value);
-            ImTable::addAssetVecComboBox(name, assets, uuid, [&](uint64_t newId) {
-              data.args[field.name].value = std::to_string(newId);
-            });
-          } else if(field.type == Utils::DataType::OBJECT_REF) {
-            // @TODO: do this in scene itself
-            auto &map = ctx.project->getScenes().getLoadedScene()->objectsMap;
-            std::vector<ImTable::ComboEntry> objList;
-            objList.push_back({0, "<None>"});
+            ImGui::PushID(static_cast<int>(prop.id & 0xFFFFFFFFULL));
+            ImTable::add(name);
+            
+            bool isOverridden = obj.hasPropOverride(prop);
+            
+            // Lock toggle button
+            if (isInstanceMode)
+            {
+              if (ImGui::IconToggle(isOverridden, ICON_MDI_LOCK_OPEN, ICON_MDI_LOCK, ImVec2{16,16})) {
+                if (isOverridden) {
+                  obj.addPropOverride(prop);
+                } else {
+                  obj.removePropOverride(prop);
+                }
+              }
+              ImGui::SetItemTooltip(isOverridden ? "Disable Override" : "Enable Override");
+              ImGui::SameLine();
+            }
+            
+            ImTable::PrefabEditScope prefabScope(isOverridden);
+            std::string resolved = prop.resolve(obj.propOverrides);
+            uint64_t uuid = resolved.empty() ? 0 : Utils::parseU64(resolved);
+            auto validationFunc = [&](uint64_t newId) {
+                if (isInstanceMode && !obj.hasPropOverride(prop)) {
+                  obj.addPropOverride(prop);
+                }
+                prop.resolve(obj.propOverrides) = std::to_string(newId);
+              };
+            
+            if(field.type == Utils::DataType::ASSET_SPRITE) {
+              const auto &assets = ctx.project->getAssets().getTypeEntries(FileType::IMAGE);
+              ImTable::addAssetVecComboBox("", assets, uuid, validationFunc);
+            } else if(field.type == Utils::DataType::OBJECT_REF) {
+              // @TODO: do this in scene itself
+              auto &map = ctx.project->getScenes().getLoadedScene()->objectsMap;
+              std::vector<ImTable::ComboEntry> objList;
+              objList.push_back({0, "<None>"});
 
-            for (auto &[id, object] : map) {
-              objList.push_back({
+              for (auto &[id, object] : map) {
+                objList.push_back({
                 .value = object->uuid,
                 .name = object->name,
-              });
-            }
+                });
+              }
 
-            uint32_t uuid = static_cast<uint32_t>(Utils::parseU64(data.args[field.name].value));
-            ImTable::addObjectVecComboBox(name, objList, uuid, [&](uint32_t newId) {
-              data.args[field.name].value = std::to_string(newId);
-            });
+              ImTable::addObjectVecComboBox("", objList, uuid, validationFunc);
+            } else if(field.type == Utils::DataType::PREFAB) {
+              const auto &prefabs = ctx.project->getAssets().getTypeEntries(FileType::PREFAB);
+              ImTable::addAssetVecComboBox("", prefabs, uuid, validationFunc);
+            }
+            ImGui::PopID();
+          } else if(field.type == Utils::DataType::VEC3) {
+            ImTable::addObjProp<std::string>(name, prop, [&](std::string *val) -> bool {
+              auto values = Utils::parseFloatList(*val);
+              values.resize(3, 0.0f);
+              if (ImGui::InputFloat3("##", values.data())) {
+                *val = Utils::floatListToString(values.data(), 3);
+                return true;
+              }
+              return false;
+            }, nullptr);
+          } else if(field.type == Utils::DataType::QUAT) {
+            ImTable::addObjProp<std::string>(name, prop, [&](std::string *val) -> bool {
+              auto values = Utils::parseFloatList(*val);
+              if (values.empty()) values = {0,0,0,1};
+              values.resize(4, 0.0f);
+              if (ImGui::InputFloat4("##", values.data())) {
+                *val = Utils::floatListToString(values.data(), 4);
+                return true;
+              }
+              return false;
+            }, nullptr);
+          } else if(!field.bitmask.empty()) {
+            ImTable::addObjProp<std::string>(name, prop, [&](std::string *val) -> bool {
+              uint32_t mask = val->empty() ? 0u : static_cast<uint32_t>(Utils::parseU64(*val));
+              if (ImTable::bitMaskCombo("##bitmask", mask, field.bitmask)) {
+                *val = std::to_string(mask);
+                return true;
+              }
+              return false;
+            }, nullptr);
           } else {
-            ImTable::addObjProp(name, data.args[field.name]);
+            ImTable::addObjProp(name, prop);
           }
         }
+      }
+
+      // Need to open the Script ComboBox (the component is being added)
+      if (data.openScriptComboBox) {
+        ImTable::unfoldComboBox("##Script");
+        data.openScriptComboBox = false;
       }
 
       ImTable::end();

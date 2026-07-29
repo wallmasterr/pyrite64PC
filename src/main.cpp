@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <SDL3/SDL.h>
 #include <future>
-#include <filesystem>
+#include <thread>
 
 #include <argparse/argparse.hpp>
 
@@ -20,6 +20,7 @@
 #include "editor/imgui/theme.h"
 #include "editor/pages/launcher.h"
 #include "editor/pages/editorScene.h"
+#include "editor/thumbnailCache.h"
 #include "editor/imgui/notification.h"
 #include "renderer/scene.h"
 #include "renderer/shader.h"
@@ -173,6 +174,12 @@ int main(int argc, char** argv)
     ctx.hasNewerVersion = !ctx.newerVersion.empty();
   });
 
+  //ctx.debugMode = true; // DEBUG
+  if(ctx.debugMode) {
+    printf("Debug mode enabled\n");
+    SDL_SetHint(SDL_HINT_RENDER_VULKAN_DEBUG, "1");
+  }
+
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
   {
     printf("Error: SDL_Init(): %s\n", SDL_GetError());
@@ -202,8 +209,7 @@ int main(int argc, char** argv)
   }
 
   // Create GPU Device
-  bool debugMode = false;
-  ctx.gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL, debugMode, nullptr);
+  ctx.gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL, ctx.debugMode, nullptr);
   if (ctx.gpu == nullptr)
   {
     fatal("Error: Cannot initialize a supported GPU backend (SPIR-V/MSL/DXIL)\n\nSDL_CreateGPUDevice(): %s\n", SDL_GetError());
@@ -278,31 +284,32 @@ int main(int argc, char** argv)
 
     Renderer::Scene scene{};
     ctx.scene = &scene;
+    Editor::ThumbnailCache thumbnailCache{};
+    ctx.thumbnails = &thumbnailCache;
     Editor::Launcher editorMain{ctx.gpu};
     ctx.editorScene = std::make_unique<Editor::Scene>();
 
     ctx.prefs.load();
-    std::string pathToOpen;
-    if (!CLI::getProjectPath().empty()) {
-      pathToOpen = CLI::getProjectPath();
-    } else if (!ctx.prefs.lastProjectPath.empty()) {
-      auto path = std::filesystem::path(ctx.prefs.lastProjectPath);
-      if (std::filesystem::exists(path)) {
-        pathToOpen = path.string();
-      }
-    }
-    if (!pathToOpen.empty()) {
-      if (!Editor::Actions::call(Editor::Actions::Type::PROJECT_OPEN, pathToOpen)) {
-        Editor::Noti::add(Editor::Noti::Type::ERROR, "Failed to open project!");
+    ImGui::Theme::setTheme(ctx.prefs.themeName);
+    if(!CLI::getProjectPath().empty())
+    {
+      if(!Editor::Actions::call(Editor::Actions::Type::PROJECT_OPEN, CLI::getProjectPath())) {
+        Editor::Noti::add(Editor::Noti::Type::ERROR, "Failed to open project from command line!");
       }
     }
 
     // Main loop
     bool done = false;
-    float lastPinch;
+    float lastPinch = 1.0f;
     while(!done) {
 
       auto frameStart = SDL_GetTicksNS();
+
+      // force default theme for the launcher (i'm lazy)
+      std::string desiredTheme = ctx.project ? ctx.prefs.themeName : std::string("dark");
+      if(desiredTheme != ImGui::Theme::getCurrentTheme()) {
+        ImGui::Theme::setTheme(desiredTheme);
+      }
 
       ImGui::Theme::update();
 
@@ -450,6 +457,8 @@ int main(int argc, char** argv)
       ImGui::Render();
       scene.draw();
 
+      ctx.runDeferredActions();
+
       if (closeRequested) {
         done = confirmCloseWithUnsavedChanges();
         if(done)ctx.wantsProjectClose = true;
@@ -457,6 +466,8 @@ int main(int argc, char** argv)
 
       if(ctx.wantsProjectClose)
       {
+        // Remember this project's open windows before tearing it down (covers app exit too).
+        if(ctx.editorScene) ctx.editorScene->onProjectClosing();
         Editor::UndoRedo::getHistory().clear();
         delete ctx.project;
         ctx.project = nullptr;

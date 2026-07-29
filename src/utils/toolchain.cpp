@@ -9,6 +9,8 @@
 #include <atomic>
 #include <thread>
 
+#include "fs.h"
+
 namespace
 {
   std::atomic_bool installing{false};
@@ -63,6 +65,31 @@ void Utils::Toolchain::scan()
                     && fs::exists(state.toolchainPath / "include" / "t3d.mk")
                     && fs::exists(state.toolchainPath / "mips64-elf" / "include" / "t3d");
   #endif
+
+  if(state.hasLibdragon && state.hasTiny3d)
+  {
+    auto rspqHeader = FS::loadTextFile(state.toolchainPath / "mips64-elf" / "include" / "rspq.h");
+    auto fgeomHeader = FS::loadTextFile(state.toolchainPath / "mips64-elf" / "include" / "fgeom.h");
+    auto t3dHeader = FS::loadTextFile(state.toolchainPath / "mips64-elf" / "include" / "t3d" / "t3d.h");
+
+    state.upToDateLibs = true;
+    if(!rspqHeader.contains("rspq_block_begin_reuse")) {
+      printf("Libdragon out of date, missing 'rspq_block_begin_reuse' in rspq.h\n");
+      state.upToDateLibs = false;
+    }
+    if(!rspqHeader.contains("rspq_block_set_placeholder")) {
+      printf("Libdragon out of date, missing 'rspq_block_set_placeholder' in rspq.h\n");
+      state.upToDateLibs = false;
+    }
+    if(!fgeomHeader.contains("operator==(fm_vec3_t")) {
+      printf("Libdragon out of date, missing operator '==' for fm_vec3_t in fgeom.h\n");
+      state.upToDateLibs = false;
+    }
+    if(!t3dHeader.contains("t3d_state_set_lighting_mode")) {
+      printf("tiny3d out of date, missing 't3d_state_set_lighting_mode' in t3d.h\n");
+      state.upToDateLibs = false;
+    }
+  }
 }
 
 namespace

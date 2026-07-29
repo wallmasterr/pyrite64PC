@@ -22,9 +22,10 @@ namespace Utils::FS
     fseek(file, 0, SEEK_SET);
 
     std::string content(size, '\0');
-    fread(content.data(), 1, size, file);
+    size_t read = fread(content.data(), 1, size, file);
     fclose(file);
 
+    content.resize(read);
     return content;
   }
 
@@ -51,4 +52,10 @@ namespace Utils::FS
     return res;
   }
 
+  /**
+   * Deletes all files with a specific extension in a directory and its subdirectories.
+   * @param basePath
+   * @param fileExt
+   */
+  void delTypeRecursive(const fs::path &basePath, const std::string &fileExt);
 }

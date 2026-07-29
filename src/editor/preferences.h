@@ -4,14 +4,25 @@
 */
 #pragma once
 #include <string>
+#include <vector>
 #include "keymap.h"
+#include "glm/vec3.hpp"
 
 namespace Editor
 {
+  struct RecentProject
+  {
+    std::string path;      // absolute path to the .p64proj file
+    std::string name;      // display name (project name at the time it was opened)
+    std::string cardImage; // optional absolute path to the metadata cart/box art image
+  };
+
   struct Preferences
   {
     Input::KeymapPreset keymapPreset{Input::KeymapPreset::Blender};
     Input::Keymap keymap{};
+    std::string themeName{"dark"};
+    std::vector<RecentProject> recentProjects{};
     float zoomSpeed = 1.0f;
     float moveSpeed = 120.0f;
     float panSpeed = 30.0f;
@@ -21,10 +32,15 @@ namespace Editor
     bool useVSync = false;
     int fpsLimit = 60;
     bool showRotAsEuler = false;
-    std::string lastProjectPath{};
+    bool mouseWheelModifiesSpeed = false;
+    bool viewportLockMode = false;
+    glm::vec3 colliderColor{0.0f, 0.0f, 0.0f};
 
     void load();
     void save();
+
+    void addRecentProject(const std::string &path, const std::string &name, const std::string &cardImage = "");
+    void removeRecentProject(const std::string &path);
 
     void applyKeymapPreset();
     Input::Keymap getCurrentKeymapPreset() const;

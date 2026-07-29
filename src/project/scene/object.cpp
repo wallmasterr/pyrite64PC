@@ -9,6 +9,8 @@
 #include "../../utils/hash.h"
 #include "../../utils/jsonBuilder.h"
 #include "../../utils/json.h"
+#include "../../utils/logger.h"
+#include "../../editor/imgui/notification.h"
 
 using Builder = Utils::JSON::Builder;
 
@@ -17,7 +19,6 @@ namespace
   nlohmann::json serializeObj(const Project::Object &obj)
   {
     Builder builder{};
-    builder.set("id", obj.id);
     builder.set("name", obj.name);
     builder.set("uuid", obj.uuid);
 
@@ -62,6 +63,22 @@ void Project::Object::addComponent(int compID) {
   if (compID < 0 || compID >= static_cast<int>(Component::TABLE.size()))return;
   auto &def = Component::TABLE[compID];
 
+  // if components already contains a rigidbody don't add another one and show an error message instead
+  if (def.id == 11) // rigidbody
+  { 
+    for (const auto &comp : components)
+    {
+      auto &compDef = Component::TABLE[comp.id];
+      
+      if (compDef.id == 11)
+      {
+        Utils::Logger::log("Object '" + name + "' already has a Rigidbody component, cannot add another one", Utils::Logger::LEVEL_ERROR);
+        Editor::Noti::add(Editor::Noti::Type::ERROR, "Object '" + name + "' already has a Rigidbody component, cannot add another one");
+        return;
+      }
+    }
+  }
+
   components.push_back({
     .id = compID,
     .uuid = Utils::Hash::sha256_64bit(
@@ -89,7 +106,8 @@ void Project::Object::deserialize(Scene *scene, nlohmann::json &doc)
 {
   if(!doc.is_object())return;
 
-  id   = doc["id"];
+  // Note: a legacy "id" field may be present in older scenes; it is intentionally
+  // ignored. Runtime ids are assigned during build, never loaded from disk.
   name = doc["name"];
   uuid = doc["uuid"];
 
@@ -140,12 +158,15 @@ void Project::Object::deserialize(Scene *scene, nlohmann::json &doc)
   auto &chArray = doc["children"];
   size_t childCount = chArray.size();
 
-  assert(scene || childCount == 0);
-  if(!scene)return;
-
   for (size_t i=0; i<childCount; ++i) {
     auto childObj = std::make_shared<Object>(*this);
     childObj->deserialize(scene, chArray[i]);
-    scene->addObject(*this, childObj);
+    if(scene) {
+      // In a scene, register in the scene's object map.
+      scene->addObject(*this, childObj);
+    } else {
+      // In a prefab there is no scene, so keep the child tree on the object directly.
+      children.push_back(childObj);
+    }
   }
 }

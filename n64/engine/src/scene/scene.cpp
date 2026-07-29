@@ -11,7 +11,13 @@
 #include <t3d/t3d.h>
 
 #include "scene/scene.h"
+
+#include <malloc.h>
+#include <cstring>
+
 #include "scene/globalState.h"
+#include "collision/meshCollider.h"
+#include "collision/gfxScale.h"
 #include "vi/swapChain.h"
 #include "lib/memory.h"
 #include "lib/logger.h"
@@ -20,6 +26,7 @@
 #include "audio/audioManager.h"
 #include "../audio/audioManagerPrivate.h"
 #include "../debug/overlay.h"
+#include "debug/debugMenu.h"
 
 #include "renderer/pipeline.h"
 #include "renderer/pipelineHDRBloom.h"
@@ -37,6 +44,28 @@ extern "C" void p64_pc_trace(const char* step);
 namespace
 {
   uint16_t nextId = 0xFF;
+  constexpr uint32_t MAX_PHYSICS_STEPS = 5;
+  constexpr float SEC_TO_USEC = 1000000.0f;
+
+  P64::Object* collisionEventSelfObject(const P64::Coll::CollEvent &event)
+  {
+    if(event.selfCollider) return event.selfCollider->ownerObject();
+    if(event.selfMeshCollider) return event.selfMeshCollider->ownerObject();
+    return nullptr;
+  }
+
+  void dispatchObjectCollisionEvent(P64::Object &obj, const P64::Coll::CollEvent &event)
+  {
+    auto compRefs = obj.getCompRefs();
+    for(uint32_t i = 0; i < obj.compCount; ++i)
+    {
+      const auto &compDef = P64::COMP_TABLE[compRefs[i].type];
+      if(!compDef.onColl) continue;
+
+      char *dataPtr = (char *)&obj + compRefs[i].offset;
+      compDef.onColl(obj, dataPtr, event);
+    }
+  }
 #if RSPQ_PROFILE && !defined(PLATFORM_PC)
   uint32_t frameCount = 0;
 #endif
@@ -50,6 +79,7 @@ P64::Scene::Scene(uint16_t sceneId, Scene** ref)
   p64_pc_trace("Scene_ctor_start");
 #endif
   Debug::init();
+  Debug::Overlay::init();
 
 #ifdef PLATFORM_PC
   p64_pc_trace("Scene_loadSceneConfig");
@@ -116,6 +146,15 @@ P64::Scene::Scene(uint16_t sceneId, Scene** ref)
 #ifdef PLATFORM_PC
   p64_pc_trace("Scene_loadScene");
 #endif
+  auto *collisionScene = Coll::collisionSceneGetInstance();
+  collisionScene->reset();
+  collisionScene->configureSimulation(
+    conf.physicsTickRate > 0 ? (1.0f / static_cast<float>(conf.physicsTickRate)) : Coll::DEFAULT_FIXED_DT,
+    conf.gravity,
+    conf.velocitySolverIterations,
+    conf.positionSolverIterations,
+    conf.visualUnitsPerMeter
+  );
   loadScene();
 
 #ifdef PLATFORM_PC
@@ -143,20 +182,13 @@ P64::Scene::~Scene()
 
 void P64::Scene::update(float deltaTime)
 {
+  accumulator_ticks += TICKS_FROM_US((uint32_t)(deltaTime * 1000000.0f));
   joypad_poll();
-  auto pressed = joypad_get_buttons_pressed(JOYPAD_PORT_1);
-  auto held = joypad_get_buttons_held(JOYPAD_PORT_1);
-  if(held.l && pressed.d_up) {
-    Debug::Overlay::toggle();
-  }
 
   // reset metrics
   ticksActorUpdate = 0;
   ticksDraw = 0;
   ticksGlobalDraw = 0;
-  collScene.ticks = 0;
-  collScene.ticksBVH = 0;
-  collScene.raycastCount = 0;
   AudioManager::ticksUpdate = 0;
 
   AudioManager::update();
@@ -166,24 +198,95 @@ void P64::Scene::update(float deltaTime)
   camMain = cameras.empty() ? nullptr : cameras[0];
   //debugf("cam %p: %d | %f\n", camMain, cameras.size(), (double)camMain->pos.z);
 
-  for(auto data : objectsToAdd) {
-    loadObject((uint8_t*&)data.prefabData, [&](Object &obj)
-    {
-      obj.id = data.objectId;
-      obj.pos = data.pos;
-      obj.scale = data.scale;
-      obj.rot = data.rot;
-      obj.flags = ObjectFlags::ACTIVE;
-    }, true);
-  }
-
-  runPendingComponentInit();
-
-  objectsToAdd.clear();
-
   ticksGlobalUpdate = get_user_ticks();
   GlobalScript::callHooks(GlobalScript::HookType::SCENE_UPDATE);
   ticksGlobalUpdate = get_user_ticks() - ticksGlobalUpdate;
+
+  for(auto data : objectsToAdd) {
+    auto *objPtr = (uint8_t*)data.prefabData;
+    for(uint16_t i = 0; i < data.count; ++i) {
+      loadObject(objPtr, [&, i](Object &obj)
+      {
+        uint16_t storedParent = obj.group; // parent's index within the prefab
+        obj.id = data.objectId + i;
+        obj.flags = ObjectFlags::ACTIVE | (obj.flags & ObjectFlags::HAS_CHILDREN);
+        if(i == 0) {
+          // The root is placed directly at the spawn transform, parented if requested.
+          obj.group = data.parentId;
+          obj.pos = data.pos;
+          obj.scale = data.scale;
+          obj.rot = data.rot;
+
+          if(data.parentId) {
+            if(auto* parent = getObjectById(data.parentId)) {
+              parent->setFlag(ObjectFlags::HAS_CHILDREN, true);
+              needsObjStateUpdate = true;
+            } else {
+              obj.group = 0;
+            }
+          }
+        } else {
+          // Children are baked relative to the root, so compose the spawn transform onto them.
+          obj.group = data.objectId + storedParent;
+          obj.pos = data.pos + data.rot * (data.scale * obj.pos);
+          obj.rot = data.rot * obj.rot;
+          obj.scale = data.scale * obj.scale;
+        }
+      }, true);
+    }
+  }
+
+  runPendingComponentInit();
+  objectsToAdd.clear();
+
+  // transition active/inactive state of objects
+  //auto t = get_ticks();
+  if(needsObjStateUpdate)
+  {
+    for(const auto obj : objects) {
+      updateChildObjectStates(nullptr, *obj);
+    }
+    needsObjStateUpdate = false;
+  }
+  //t = get_ticks() - t;
+  //debugf("State Change Time: %llu us\n", TICKS_TO_US(t));
+
+  runPendingEvents();
+
+  // ======== Run the Physics and fixed Update Callbacks in a fixed Deltatime Loop ======== //
+  uint16_t physicsTickRate = conf.physicsTickRate > 0 ? conf.physicsTickRate : 50;
+  float fixedDeltaTime = 1.0f / static_cast<float>(physicsTickRate);
+  uint32_t fixedDeltaTimeTicks = TICKS_FROM_US((uint32_t)(fixedDeltaTime * SEC_TO_USEC));
+  // Safety Clamp
+  if (accumulator_ticks > fixedDeltaTimeTicks * MAX_PHYSICS_STEPS)
+  {
+    accumulator_ticks = fixedDeltaTimeTicks * MAX_PHYSICS_STEPS;
+  }
+  while (accumulator_ticks >= fixedDeltaTimeTicks)
+  {
+    for(auto obj : objects)
+    {
+      if(!obj->isEnabled()) continue;
+
+      auto compRefs = obj->getCompRefs();
+      for(uint32_t i = 0; i < obj->compCount; ++i) {
+        const auto &compDef = COMP_TABLE[compRefs[i].type];
+        if(!compDef.fixedUpdate) continue;
+
+        char* dataPtr = (char*)obj + compRefs[i].offset;
+        compDef.fixedUpdate(*obj, dataPtr, fixedDeltaTime);
+      }
+    }
+
+    Coll::collisionSceneGetInstance()->step();
+    accumulator_ticks -= fixedDeltaTimeTicks;
+  }
+
+  // Extrapolate rigid body transforms for visual smoothness
+  if(conf.interpolatePhysicsTransforms){
+    float remainderSec = static_cast<float>(accumulator_ticks) / static_cast<float>(TICKS_FROM_US(SEC_TO_USEC));
+    applyRigidBodyRenderInterpolation(remainderSec);
+  }
 
   ticksActorUpdate = get_ticks();
   for(auto obj : objects)
@@ -204,43 +307,22 @@ void P64::Scene::update(float deltaTime)
   }
 
   ticksActorUpdate = get_ticks() - ticksActorUpdate;
-  collScene.update(deltaTime);
 
   for(auto &obj : pendingObjDelete)
   {
     if(obj->id < idLookup.size()) {
       idLookup[obj->id] = nullptr;
     }
+    std::erase_if(savedTransforms_, [&](const SavedTransform &st) { return st.body->ownerObject() == obj; });
     std::erase(objects, obj);
     obj->~Object();
+
+    memObjects -= malloc_usable_size(obj);
     free(obj);
   }
   pendingObjDelete.clear();
 
-  // events, switch now to prevent infinite loops for objects that push events in response to events
-  auto &evQueue = eventQueue[eventQueueIdx];
-  eventQueueIdx = (eventQueueIdx + 1) % 2;
-  for(uint32_t e=0; e<evQueue.eventCount; ++e)
-  {
-    auto &entry = evQueue.events[e];
-    auto obj = getObjectById(entry.targetId);
-    if(obj)
-    {
-      auto compRefs = obj->getCompRefs();
-      for (uint32_t i=0; i<obj->compCount; ++i) {
-        const auto &compDef = COMP_TABLE[compRefs[i].type];
-        if(compDef.onEvent)
-        {
-          char* dataPtr = (char*)obj + compRefs[i].offset;
-          compDef.onEvent(*obj, dataPtr, entry.event);
-        }
-      }
-    }
-  }
-  evQueue.clear();
-
   AudioManager::update();
-
   VI::SwapChain::nextFrame();
 }
 
@@ -282,7 +364,7 @@ void P64::Scene::draw([[maybe_unused]] float deltaTime)
 
       for (uint32_t i=0; i<obj->compCount; ++i)
       {
-        if(obj->flags & ObjectFlags::IS_CULLED)break;
+        if(obj->flags & (ObjectFlags::IS_CULLED | ObjectFlags::HIDDEN))break;
         const auto &compDef = COMP_TABLE[compRefs[i].type];
         if(compDef.draw)
         {
@@ -315,6 +397,9 @@ void P64::Scene::draw([[maybe_unused]] float deltaTime)
   ticksGlobalDraw += get_user_ticks() - t;
 
   renderPipeline->draw();
+
+  restoreInterpolatedTransforms();
+
   ticksDraw = get_ticks() - ticksDraw;
 
 #ifdef PLATFORM_PC
@@ -330,57 +415,127 @@ void P64::Scene::draw([[maybe_unused]] float deltaTime)
 #endif
 }
 
+void P64::Scene::runPendingEvents()
+{
+  // events, switch now to prevent infinite loops for objects that push events in response to events
+  auto &evQueue = eventQueue[eventQueueIdx];
+  eventQueueIdx = (eventQueueIdx + 1) % 2;
+  for(const auto &entry : evQueue.events)
+  {
+    auto obj = getObjectById(entry.targetId);
+    if(obj)
+    {
+      auto compRefs = obj->getCompRefs();
+      for (uint32_t i=0; i<obj->compCount; ++i) {
+        const auto &compDef = COMP_TABLE[compRefs[i].type];
+        if(compDef.onEvent)
+        {
+          char* dataPtr = (char*)obj + compRefs[i].offset;
+          compDef.onEvent(*obj, dataPtr, entry.event);
+        }
+      }
+    }
+  }
+  evQueue.clear();
+}
+
+void P64::Scene::applyRigidBodyRenderInterpolation(float dt)
+{
+  auto &rigidBodies = Coll::collisionSceneGetInstance()->getRigidBodies();
+  restoreInterpolatedTransforms();
+
+  for(auto *body : rigidBodies) {
+    if(!body || body->isSleeping() || body->isKinematic()) continue;
+
+    Object *obj = body->ownerObject();
+    if(!obj) continue;
+
+    // A transform that doesn't match the last physics writeback holds a manual change that physics hasn't adopted yet
+    if(obj->pos != body->syncedOwnerPos() ||
+       obj->rot != body->syncedOwnerRot()) continue;
+
+    // Extrapolate forward by the remaining time (velocity is in physics units, obj->pos in gfx units)
+    const fm_vec3_t &vel = body->linearVelocity();
+    obj->pos = obj->pos + vel * dt * Coll::getGfxScale();
+
+    const fm_vec3_t &angVel = body->angularVelocity();
+    if(!Coll::vec3IsZero(angVel)) {
+      obj->rot = Coll::quatApplyAngularVelocity(obj->rot, angVel, dt);
+    }
+
+    savedTransforms_.push_back({body, obj->pos, obj->rot});
+  }
+}
+
+void P64::Scene::restoreInterpolatedTransforms()
+{
+  for(auto &saved : savedTransforms_) {
+    Object *obj = saved.body->ownerObject();
+    const fm_vec3_t &basePos = saved.body->syncedOwnerPos();
+    const fm_quat_t &baseRot = saved.body->syncedOwnerRot();
+
+    // If a script/update changed the transform after extrapolation, re-base its change onto the real physics transform 
+    //so the extrapolation offset doesn't leak into it
+    if(obj->pos == saved.shownPos) {
+      obj->pos = basePos;
+    } else {
+      obj->pos = basePos + (obj->pos - saved.shownPos);
+    }
+    if(obj->rot == saved.shownRot) {
+      obj->rot = baseRot;
+    } else {
+      obj->rot = (obj->rot * Coll::quatConjugate(saved.shownRot)) * baseRot;
+      fm_quat_norm(&obj->rot, &obj->rot);
+    }
+  }
+  savedTransforms_.clear();
+}
+
 void P64::Scene::onObjectCollision(const Coll::CollEvent &event)
 {
-  auto objA = event.selfBCS ? event.selfBCS->obj : event.selfMesh->object;
-  auto objB = event.otherBCS ? event.otherBCS->obj : event.otherMesh->object;
-  if(!objA || !objB)return;
+  auto *selfObject = collisionEventSelfObject(event);
+  auto *otherObject = event.otherObject;
+  if(!selfObject || !otherObject) return;
+  if(!selfObject->isEnabled() || !otherObject->isEnabled()) return;
 
-  auto compRefsA = objA->getCompRefs();
-  for (uint32_t i=0; i<objA->compCount; ++i)
+  dispatchObjectCollisionEvent(*selfObject, event);
+}
+
+bool P64::Scene::objectHasCollisionHandler(const Object &obj)
+{
+  auto compRefs = obj.getCompRefs();
+  for(uint32_t i = 0; i < obj.compCount; ++i)
   {
-    const auto &compDef = COMP_TABLE[compRefsA[i].type];
-    if(compDef.onColl) {
-      char* dataPtr = (char*)objA + compRefsA[i].offset;
-      compDef.onColl(*objA, dataPtr, event);
-    }
+    if(COMP_TABLE[compRefs[i].type].onColl) return true;
   }
-
-  //if(!event.otherBCS)return;
-
-  Coll::CollEvent eventOther{
-    .selfBCS = event.otherBCS,
-    .otherBCS = event.selfBCS,
-    .selfMesh = event.otherMesh,
-    .otherMesh = event.selfMesh,
-  };
-
-  auto compRefsB = objB->getCompRefs();
-  for (uint32_t i=0; i<objB->compCount; ++i)
-  {
-    const auto &compDef = COMP_TABLE[compRefsB[i].type];
-    if(compDef.onColl) {
-      char* dataPtr = (char*)objB + compRefsB[i].offset;
-      compDef.onColl(*objB, dataPtr, eventOther);
-    }
-  }
+  return false;
 }
 
 uint16_t P64::Scene::addObject(
   uint32_t prefabIdx,
   const fm_vec3_t &pos,
   const fm_vec3_t &scale,
-  const fm_quat_t &rot
+  const fm_quat_t &rot,
+  uint16_t parentId
 ) {
-  auto *prefabData = AssetManager::getByIndex(prefabIdx);
+  auto *prefabData = (uint8_t*)AssetManager::getByIndex(prefabIdx);
+
+  // The prefab file is prefixed with its object count (root + all nested objects). Reserve a
+  // contiguous block of ids for them so children can reference their parent by id at spawn.
+  uint32_t count = *(uint32_t*)prefabData;
+  uint16_t rootId = nextId + 1;
+  nextId += count;
+
   objectsToAdd.push_back({
-    .prefabData = prefabData,
+    .prefabData = prefabData + sizeof(uint32_t),
     .pos = pos,
     .scale = scale,
     .rot = rot,
-    .objectId = ++nextId,
+    .objectId = rootId,
+    .count = (uint16_t)count,
+    .parentId = parentId,
   });
-  return nextId;
+  return rootId;
 }
 
 void P64::Scene::removeObject(Object &obj)
@@ -405,20 +560,33 @@ P64::Object* P64::Scene::getObjectById(uint16_t objId) const
   return nullptr;
 }
 
-void P64::Scene::setGroupEnabled(uint16_t groupId, bool enabled) const
+void P64::Scene::updateChildObjectStates(const Object* parent, Object& obj)
 {
-  if(groupId == 0)return;
-
-  for(auto obj : objects)
-  {
-    if (groupId == obj->id) {
-      obj->setFlag(ObjectFlags::SELF_ACTIVE, enabled);
-    }
-    if (groupId == obj->group) {
-      //debugf("-> obj %d active = %d\n", obj->id, enabled);
-      obj->setFlag(ObjectFlags::PARENTS_ACTIVE, enabled);
-    }
+  if(!parent && obj.group) {
+    parent = getObjectById(obj.group);
   }
+
+  const auto wasEnabledBefore = obj.isEnabled();
+  const auto wasVisibleBefore = obj.isVisible();
+
+  obj.setFlag(ObjectFlags::PARENTS_ACTIVE, parent ? parent->isEnabled() : true);
+  obj.setFlag(ObjectFlags::PARENTS_HIDDEN, parent ? !parent->isVisible() : false);
+  obj.performStateChange();
+
+  const bool enabledChanged = wasEnabledBefore != obj.isEnabled();
+  const bool visibleChanged = wasVisibleBefore != obj.isVisible();
+
+  if(!enabledChanged && !visibleChanged) {
+    return;
+  }
+
+  if (enabledChanged) {
+    sendEvent(obj.id, 0, obj.isEnabled() ? EVENT_TYPE_ENABLE : EVENT_TYPE_DISABLE, 0);
+  }
+
+  iterObjectChildren(obj.id, [&](Object* child) {
+    updateChildObjectStates(&obj, *child);
+  });
 }
 
 P64::Lighting & P64::Scene::startLightingOverride(bool copyExisting)

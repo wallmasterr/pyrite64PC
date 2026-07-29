@@ -1,11 +1,16 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(pyrite64 VERSION 0.6.0)
+project(pyrite64 VERSION 0.9.0)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(QJS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(QJS_BUILD_CLI_STATIC OFF CACHE BOOL "" FORCE)
+set(QJS_BUILD_LIBC OFF CACHE BOOL "" FORCE)
+add_subdirectory(vendored/quickjs-ng EXCLUDE_FROM_ALL)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR
@@ -130,10 +135,16 @@ add_executable(pyrite64 src/main.cpp
         src/project/project.cpp
         src/editor/actions.h
         src/editor/actions.cpp
+        src/editor/audioPreview.h
+        src/editor/audioPreview.cpp
         src/editor/undoRedo.h
         src/editor/undoRedo.cpp
         src/editor/selectionUtils.h
         src/editor/selectionUtils.cpp
+        src/editor/transformUtils.h
+        src/editor/transformUtils.cpp
+        src/editor/thumbnailCache.h
+        src/editor/thumbnailCache.cpp
         src/editor/window.h
         src/editor/window.cpp
         src/editor/keymap.h
@@ -166,6 +177,8 @@ add_executable(pyrite64 src/main.cpp
         src/editor/pages/parts/sceneInspector.cpp
         src/build/projectBuilder.h
         src/build/projectBuilder.cpp
+        src/build/romMetaBuilder.h
+        src/build/romMetaBuilder.cpp
         src/utils/fs.h
         src/utils/string.h
         src/utils/proc.h
@@ -216,7 +229,6 @@ add_executable(pyrite64 src/main.cpp
         src/renderer/n64Mesh.cpp
         src/renderer/n64/n64Material.h
         src/renderer/n64/n64Material.cpp
-        src/renderer/n64/ccMapping.h
         src/project/component/types/compLight.cpp
         src/project/component/types/compCamera.cpp
         src/editor/imgui/helper.cpp
@@ -229,6 +241,8 @@ add_executable(pyrite64 src/main.cpp
         src/build/t3dmBuilder.cpp
         src/build/collisionBuilder.cpp
         src/project/component/types/compCollBody.cpp
+        src/project/component/types/compRigidBody.cpp
+        src/project/component/types/compCharBody.cpp
         src/build/fontBuilder.cpp
         src/utils/prop.h
         src/project/scene/prefab.h
@@ -245,11 +259,18 @@ add_executable(pyrite64 src/main.cpp
         src/project/component/types/compConstraint.cpp
         src/project/component/types/compCulling.cpp
         src/editor/pages/parts/nodeEditor.cpp
-        src/project/component/shared/material.h
-        src/project/component/shared/material.cpp
+        src/project/component/shared/materialInstance.cpp
         src/project/component/shared/meshFilter.cpp
         src/project/graph/nodes/baseNode.h
-        src/project/graph/nodes/nodeWait.h
+        src/project/graph/nodes/nodeSpec.h
+        src/project/graph/nodes/scriptNode.h
+        src/project/graph/nodes/scriptNode.cpp
+        src/project/graph/nodeRegistry.h
+        src/project/graph/nodeRegistry.cpp
+        src/project/graph/jsNodeHost.h
+        src/project/graph/jsNodeHost.cpp
+        src/project/graph/valueTypes.h
+        src/project/graph/valueTypes.cpp
         src/project/graph/graph.h
         src/project/graph/graph.cpp
         src/build/nodeGraphBuilder.cpp
@@ -269,7 +290,29 @@ add_executable(pyrite64 src/main.cpp
         src/editor/preferences.h
         src/editor/preferences.cpp
         src/editor/pages/parts/assets/modelEditor.cpp
+        src/project/assets/material.h
+        src/project/assets/material.cpp
+        src/project/assets/model3d.h
+        src/n64/libdragon.h
+        src/n64/ccMapping.cpp
+        src/n64/ccMapping.cpp
+        src/editor/pages/parts/assets/textureEditor.h
+        src/editor/pages/parts/assets/textureEditor.cpp
+        src/editor/pages/parts/assets/matInstanceEditor.h
+        src/editor/pages/parts/assets/matInstanceEditor.cpp
+        src/renderer/storageBuffer.cpp
+        src/renderer/skeleton.h
+        src/renderer/skeleton.cpp
+        src/renderer/animation.h
+        src/renderer/animation.cpp
 )
+
+# libdragon's C headers (e.g. surface_make in surface.h) use narrowing
+# conversions in braced initializers. GCC only warns, but Clang/AppleClang
+# treat this as a hard error, so relax it there to keep the macOS build working.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(pyrite64 PRIVATE -Wno-narrowing)
+endif()
 
 target_include_directories(pyrite64 PRIVATE
     vendored
@@ -284,6 +327,8 @@ target_include_directories(pyrite64 PRIVATE
     vendored/tiny3d/tools/gltf_importer/src/lib
     vendored/libdragon
     vendored/SDL_shadercross/include
+    vendored/quickjs-ng
+    src/n64
     n64
 )
 
@@ -295,10 +340,15 @@ set(PYRITE_APP_NAME "pyrite64")
 set(PYRITE_GH_USER "HailToDodongo")
 set(PYRITE_GH_REPO "pyrite64")
 
+# Base URL of the published docs (GitHub Pages host is the lowercased user name).
+string(TOLOWER "${PYRITE_GH_USER}" PYRITE_GH_USER_LC)
+set(PYRITE_DOCS_URL "https://${PYRITE_GH_USER_LC}.github.io/${PYRITE_GH_REPO}/docs")
+
 target_compile_definitions(pyrite64 PRIVATE "PYRITE_ORG_NAME=\"${PYRITE_ORG_NAME}\"")
 target_compile_definitions(pyrite64 PRIVATE "PYRITE_APP_NAME=\"${PYRITE_APP_NAME}\"")
 target_compile_definitions(pyrite64 PRIVATE "PYRITE_GH_USER=\"${PYRITE_GH_USER}\"")
 target_compile_definitions(pyrite64 PRIVATE "PYRITE_GH_REPO=\"${PYRITE_GH_REPO}\"")
+target_compile_definitions(pyrite64 PRIVATE "PYRITE_DOCS_URL=\"${PYRITE_DOCS_URL}\"")
 target_compile_definitions(pyrite64 PRIVATE "PYRITE_VERSION=\"${PROJECT_VERSION}\"")
 
 target_compile_definitions(pyrite64 PRIVATE IMGUI_DEFINE_MATH_OPERATORS GLM_FORCE_QUAT_DATA_XYZW)
@@ -310,6 +360,7 @@ target_link_libraries(pyrite64 PRIVATE
     SDL3::SDL3
     SDL3_image::SDL3_image
     glm::glm
+    qjs
 )
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")

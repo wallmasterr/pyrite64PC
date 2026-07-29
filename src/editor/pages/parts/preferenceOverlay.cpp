@@ -19,9 +19,11 @@ bool Editor::PreferenceOverlay::draw()
     ImTable::start("Navigation");
     ImTable::add("Zoom Speed", ctx.prefs.zoomSpeed);
     ImTable::add("WASD Move Speed", ctx.prefs.moveSpeed);
+    ImTable::add("Modify Move Speed with Wheel", ctx.prefs.mouseWheelModifiesSpeed);
     ImTable::add("Pan Speed", ctx.prefs.panSpeed);
     ImTable::add("Look Speed", ctx.prefs.lookSpeed);
     ImTable::add("Invert Wheel Y", ctx.prefs.invertWheelY);
+    ImTable::add("Lock Viewport Navigation", ctx.prefs.viewportLockMode);
     ImTable::end();
   }
 
@@ -47,12 +49,21 @@ bool Editor::PreferenceOverlay::draw()
       ctx.prefs.fpsLimit = std::max(20, ctx.prefs.fpsLimit);
     }
 
+    ImTable::add("Collider Color");
+    ImGui::ColorEdit3(
+      "##ColliderColor",
+      glm::value_ptr(ctx.prefs.colliderColor),
+      ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel
+    );
+
     ImTable::end();
   }
 
   if (ImGui::CollapsingHeader("Keymap", ImGuiTreeNodeFlags_DefaultOpen)) {
     ImTable::start("Keymap");
-    if (ImTable::addComboBox("Preset", (int&)ctx.prefs.keymapPreset, { "Blender", "Industry Compatible" })) {
+    int keymapPreset = (int)ctx.prefs.keymapPreset;
+    if (ImTable::addComboBox("Preset", keymapPreset, { "Blender", "Industry Compatible" })) {
+      ctx.prefs.keymapPreset = (Editor::Input::KeymapPreset)keymapPreset;
       ctx.prefs.applyKeymapPreset();
     }
     ImTable::end();

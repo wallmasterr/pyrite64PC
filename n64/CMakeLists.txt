@@ -54,7 +54,6 @@ add_executable(n64_engine
         engine/include/script/globalScript.h
         engine/include/scene/event.h
         engine/src/scene/components/collMesh.cpp
-        engine/src/libdragon/rspq.h
         engine/include/renderer/drawLayer.h
         engine/src/renderer/drawLayer.cpp
         engine/src/renderer/pipelineDefault.cpp
@@ -76,23 +75,21 @@ add_executable(n64_engine
         engine/include/scene/components/audio2d.h
         engine/src/scene/components/audio2d.cpp
         engine/src/scene/components/collBody.cpp
-        engine/include/collision/flags.h
+        engine/src/scene/components/rigidBody.cpp
         engine/src/renderer/hdr/rspHDR.cpp
         engine/include/renderer/particles/ptxSprites.h
         engine/src/renderer/particles/ptxSystem.cpp
         engine/src/renderer/particles/ptxSprites.cpp
-        engine/src/collision/resolver.cpp
-        engine/src/collision/mesh.cpp
-        engine/src/collision/meshLoader.cpp
         engine/src/lib/math.cpp
         engine/src/debug/overlay.cpp
         engine/include/collision/attach.h
         engine/src/collision/attach.cpp
+        engine/include/collision/characterBody.h
+        engine/src/collision/characterBody.cpp
+        engine/src/scene/components/charBody.cpp
         engine/src/scene/componentTable.cpp
-        engine/src/collision/scene.cpp
         engine/src/scene/components/culling.cpp
         engine/include/renderer/material.h
-        engine/src/collision/shapes.cpp
         engine/src/scene/components/constraint.cpp
         engine/src/scene/components/camera.cpp
         engine/src/scene/components/nodeGraph.cpp
@@ -101,4 +98,12 @@ add_executable(n64_engine
         engine/src/renderer/material.cpp
         engine/src/scene/components/animModel.cpp
         engine/src/lib/matrixManager.cpp
+        engine/src/renderer/hdr/postProcess.cpp
+        engine/src/debug/debugText.cpp
+        engine/src/debug/overlay/ovlAudio.cpp
+        engine/src/debug/overlay/ovlMemory.cpp
+        engine/src/debug/overlay/ovlCPU.cpp
+        engine/src/debug/overlay/ovlColors.h
+        engine/include/debug/debugMenu.h
+        engine/src/collision/characterBody.cpp
 )

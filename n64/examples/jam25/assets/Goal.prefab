@@ -32,7 +32,31 @@
             "setEnv": true,
             "setFresnel": false,
             "setLighting": false,
-            "setPrim": true
+            "setPrim": true,
+            "tex0": {
+              "dynPlaceholder": 0,
+              "dynType": 1,
+              "mirrorS": false,
+              "mirrorT": false,
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "repeat": [
+                32.0,
+                64.0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "set": true,
+              "texSize": [
+                0,
+                0
+              ],
+              "texUUID": 0
+            }
           },
           "meshFilter": "Outer",
           "model": 5873588011152101620
@@ -71,7 +95,31 @@
             "setEnv": true,
             "setFresnel": false,
             "setLighting": false,
-            "setPrim": true
+            "setPrim": true,
+            "tex0": {
+              "dynPlaceholder": 0,
+              "dynType": 1,
+              "mirrorS": false,
+              "mirrorT": false,
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "repeat": [
+                32.0,
+                64.0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "set": true,
+              "texSize": [
+                0,
+                0
+              ],
+              "texUUID": 0
+            }
           },
           "meshFilter": "Inner",
           "model": 5873588011152101620
@@ -82,14 +130,15 @@
       },
       {
         "data": {
+          "bounce": 0.0,
+          "friction": 0.800000011920929,
           "halfExtend": [
             15.0,
             15.0,
             15.0
           ],
-          "isFixed": false,
           "isTrigger": true,
-          "maskRead": 8,
+          "maskRead": 4,
           "maskWrite": 0,
           "offset": [
             0.0,
@@ -135,6 +184,7 @@
       300.0
     ],
     "propOverrides": {},
+    "proportionalScale": false,
     "rot": [
       0.0,
       0.0,

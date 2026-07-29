@@ -26,6 +26,7 @@ Linux users should follow the conventions of their distribution and package mana
   pacman -S mingw-w64-ucrt-x86_64-gcc
   pacman -S mingw-w64-ucrt-x86_64-cmake
   pacman -S mingw-w64-ucrt-x86_64-ninja
+  pacman -S mingw-w64-ucrt-x86_64-python
 
 
 ====================
@@ -85,6 +86,7 @@ Where ``<preset>`` is replaced with the CMake preset name corresponding to your 
 * ``linux-debug`` for Linux systems, debug version
 * ``windows-gcc-release`` for Windows systems with MSYS2, release version
 * ``windows-gcc-debug`` for Windows systems with MSYS2, debug version
+* ``macos-release`` for MacOS systems, release version
 
 | Once the build is finished, a program called ``pyrite64`` (or ``pyrite64.exe``) should be placed in the root directory of the repo.
 | The program itself can be placed anywhere on the system, however the ``./data`` and ``./n64`` directories must stay next to it.

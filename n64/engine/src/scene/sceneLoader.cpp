@@ -121,6 +121,8 @@ P64::Object* P64::Scene::loadObject(uint8_t* &objFile, std::function<void(Object
   if(objMem) memset(objMem, 0, allocSize);
 #else
   objMem = memalign(DATA_ALIGN, allocSize); // @TODO: custom allocator
+  memObjects += malloc_usable_size(objMem);
+
   if(allocSize < 16) {
     memset(objMem, 0, allocSize);
   } else {
@@ -147,7 +149,7 @@ P64::Object* P64::Scene::loadObject(uint8_t* &objFile, std::function<void(Object
   while(ptrIn[1] != 0)
   {
     uint8_t compId = ptrIn[0];
-    uint8_t argSize = ptrIn[1] * 4;
+    uint32_t argSize = ptrIn[1] * 4;
 
     const auto &compDef = COMP_TABLE[compId];
     // debugf("Alloc: comp %d (arg: %d)\n", compId, argSize);
@@ -172,7 +174,10 @@ P64::Object* P64::Scene::loadObject(uint8_t* &objFile, std::function<void(Object
 
     objCompDataPtr += Math::alignUp(compDef.getAllocSize(ptrIn + 4), 8);
     ptrIn += argSize;
+
+    // send ready event. this is deferred, so it will always happen after 'initDel'
   }
+  sendEvent(obj->id, 0, EVENT_TYPE_READY, 0);
 
   /*debugf("Object: id=%d | group=%d | flags=0x%04X | pos=(%f,%f,%f) | comp: %d\n",
     obj->id, obj->group, obj->flags,
@@ -219,21 +224,26 @@ void P64::Scene::loadScene() {
         loadObject(objFile, {}, true);
       }
 
+      std::function<void(const Object* parent, Object& obj)> updateStates = [&](const Object* parent, Object& obj)
+      {
+        obj.setFlag(ObjectFlags::PARENTS_ACTIVE, parent ? parent->isEnabled() : true);
+        iterObjectChildren(obj.id, [&](Object* child) {
+          updateStates(&obj, *child);
+        });
+      };
+
+      // Resolve effective active state for the full hierarchy before deferred
+      // component init so disabled parents/groups do not register physics data.
+      for(auto obj : objects)
+      {
+        if(obj->group != 0)continue;
+        updateStates(nullptr, *obj);
+      }
+
       // run component init only after all objects are registered in the scene
       runPendingComponentInit();
 
       free(objFileStart);
-    }
-  }
-
-  // update groups
-  for(auto obj : objects)
-  {
-    if(obj->hasChildren())
-    {
-      bool groupActive = obj->isSelfEnabled();
-      debugf("Updating group %d | a:%d\n", obj->id, groupActive);
-      setGroupEnabled(obj->id, groupActive);
     }
   }
 }

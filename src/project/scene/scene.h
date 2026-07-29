@@ -23,6 +23,7 @@ namespace Project
     PROP_VEC4(fogColor);
     PROP_FLOAT(fogMin);
     PROP_FLOAT(fogMax);
+    PROP_S32(lightMode);
   };
 
   struct SceneConf
@@ -38,6 +39,12 @@ namespace Project
     PROP_S32(frameLimit);
     PROP_S32(filter);
     PROP_S32(audioFreq);
+    PROP_S32(physicsTickRate);
+    PROP_VEC3(gravity);
+    PROP_FLOAT(visualUnitsPerMeter);
+    PROP_S32(velocitySolverIterations);
+    PROP_S32(positionSolverIterations);
+    PROP_BOOL(interpolatePhysicsTransforms);
 
     std::vector<LayerConf> layers3D{};
     std::vector<LayerConf> layersPtx{};
@@ -68,7 +75,7 @@ namespace Project
 
       std::shared_ptr<Object> addObject(std::string &objJson, uint64_t parentUUID = 0);
       std::shared_ptr<Object> addObject(Object &parent);
-      std::shared_ptr<Object> addObject(Object &parent, std::shared_ptr<Object> obj, bool generateIDs = false);
+      std::shared_ptr<Object> addObject(Object &parent, std::shared_ptr<Object> obj, bool generateUUID = false);
 
       std::shared_ptr<Object> addPrefabInstance(uint64_t prefabUUID);
 
@@ -86,12 +93,18 @@ namespace Project
 
       uint32_t createPrefabFromObject(uint32_t uuid);
 
+      // Unpacks a prefab instance (shallow) into real, editable scene objects
+      void unpackPrefabInstance(uint32_t uuid);
+
       std::string serialize(bool minify = false);
 
       void resetLayers();
 
       void deserialize(const std::string &data);
 
-      uint16_t getFreeObjectId();
+      // Assigns the runtime object ids (uint16_t) for the whole tree.
+      // Build-time only: must be called before serializing objects to the runtime format.
+      // Returns the first free id (base for build-time expanded prefab-instance children).
+      uint32_t assignRuntimeIds();
   };
 }

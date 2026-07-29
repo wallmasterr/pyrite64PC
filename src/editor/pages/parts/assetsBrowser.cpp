@@ -8,7 +8,9 @@
 #include "imgui_internal.h"
 #include "../../imgui/helper.h"
 #include "../../imgui/notification.h"
+#include "../../actions.h"
 #include "../../../context.h"
+#include "../../thumbnailCache.h"
 #include <algorithm>
 #include <filesystem>
 #include <unordered_set>
@@ -65,7 +67,7 @@ void Editor::AssetsBrowser::draw() {
     },
     TabDef{
       .name = ICON_MDI_FILE "  Assets",
-      .fileTypes = {FileType::IMAGE, FileType::AUDIO, FileType::MODEL_3D, FileType::FONT}
+      .fileTypes = {FileType::IMAGE, FileType::AUDIO, FileType::MUSIC_XM, FileType::MODEL_3D, FileType::FONT}
     },
     TabDef{
       .name = ICON_MDI_SCRIPT_OUTLINE "  Scripts",
@@ -78,7 +80,7 @@ void Editor::AssetsBrowser::draw() {
   };
 
   ImGui::BeginChild("LEFT", ImVec2(94_px, 0), ImGuiChildFlags_Borders);
-  for (int i=0; i<TABS.size(); ++i) {
+  for (int i=0; i<(int)TABS.size(); ++i) {
     bool isActive = i == activeTab;
     if (ImGui::Selectable(TABS[i].name, isActive))activeTab = i;
   }
@@ -266,7 +268,7 @@ void Editor::AssetsBrowser::draw() {
   };
 
   auto drawGridButton = [&](const std::string &path, ImTextureRef icon, const char* iconTxt,
-    const std::string &label, bool selected, float alpha) {
+    const std::string &label, bool selected, float alpha, uint64_t scrubUUID = 0) {
     bool clicked = false;
     if(selected) {
       ImGui::PushStyleColor(ImGuiCol_Button, {0.5f,0.5f,0.7f,1});
@@ -281,14 +283,22 @@ void Editor::AssetsBrowser::draw() {
 
     if(icon._TexID)
     {
+      // For model thumbnails, hovering scrubs through the rendered angles.
+      ImVec2 uv0{0,0}, uv1{1,1};
+      if(scrubUUID && ctx.thumbnails) {
+        ImVec2 imgPos = ImGui::GetCursorScreenPos();
+        ctx.thumbnails->getScrubUV(imgPos, {imgPos.x + imageSize, imgPos.y + imageSize}, uv0, uv1);
+      }
       clicked = ImGui::ImageButton("##img", icon,
-        {imageSize, imageSize}, {0,0}, {1,1}, {0,0,0,0},
+        {imageSize, imageSize}, uv0, uv1, {0,0,0,0},
         {1,1,1, alpha}
       );
 
     } else {
       ImGui::PushFont(nullptr, 40_px);
+      ImGui::PushStyleColor(ImGuiCol_Text, ImGui::Theme::getColor("assetIcon", ImGui::GetStyleColorVec4(ImGuiCol_Text)));
       clicked = ImGui::Button(iconTxt, textBtnSize);
+      ImGui::PopStyleColor();
       ImGui::PopFont();
     }
 
@@ -407,13 +417,22 @@ void Editor::AssetsBrowser::draw() {
 
     auto icon = ImTextureRef(nullptr);
     const char* iconTxt = ICON_MDI_FILE_OUTLINE;
+    uint64_t scrubUUID = 0;
     if (asset.texture) {
       icon = ImTextureRef(asset.texture->getGPUTex());
     } else {
       if (asset.type == FileType::MODEL_3D) {
-        iconTxt = ICON_MDI_CUBE_OUTLINE;
+        SDL_GPUTexture* thumb = ctx.thumbnails ? ctx.thumbnails->getModelTexture(asset.getUUID()) : nullptr;
+        if (thumb) {
+          icon = ImTextureRef(thumb);
+          scrubUUID = asset.getUUID();
+        } else {
+          iconTxt = ICON_MDI_CUBE_OUTLINE;
+        }
       } else if (asset.type == FileType::AUDIO) {
         iconTxt = ICON_MDI_MUSIC;
+      } else if (asset.type == FileType::MUSIC_XM) {
+        iconTxt = ICON_MDI_PIANO;
       } else if (asset.type == FileType::FONT) {
         iconTxt = ICON_MDI_FORMAT_FONT;
       } else if (asset.type == FileType::PREFAB) {
@@ -432,7 +451,8 @@ void Editor::AssetsBrowser::draw() {
       iconTxt,
       asset.name,
       isSelected,
-      asset.conf.exclude ? 0.25f : 1.0f
+      asset.conf.exclude ? 0.25f : 1.0f,
+      scrubUUID
     );
     bool isDblClick = ImGui::IsMouseDoubleClicked(0) && ImGui::IsItemHovered();
 
@@ -441,8 +461,10 @@ void Editor::AssetsBrowser::draw() {
       ImGui::makeTabVisible("Asset");
     }
     if (isDblClick) {
-      if (!Utils::Proc::openFile(asset.path))
-      {
+      if (asset.type == FileType::NODE_GRAPH) {
+        // Node graphs open in the built-in graph editor, not an external text editor.
+        Editor::Actions::call(Editor::Actions::Type::OPEN_NODE_GRAPH, std::to_string(asset.getUUID()));
+      } else if (!Utils::Proc::openFile(asset.path)) {
         Editor::Noti::add(Editor::Noti::Type::ERROR, "Failed to open File. This may be due to WSL path conversion failure.");
       }
     }
@@ -491,6 +513,8 @@ void Editor::AssetsBrowser::draw() {
     ImGui::EndPopup();
   }
 
+  static int ctxSceneId = -1;
+
   if(tab.showScenes)
   {
     for (const auto &scene : scenes)
@@ -499,12 +523,16 @@ void Editor::AssetsBrowser::draw() {
       auto activeScene = ctx.project->getScenes().getLoadedScene();
 
       bool isSelected = activeScene && (activeScene->getId() == scene.id);
+      const auto &liveName = isSelected ? activeScene->getName() : scene.name;
+      const auto &displayName = liveName.empty() ? "(unnamed)" : liveName;
+      auto buttonLabel = displayName + "##" + std::to_string(scene.id);
+
       if(isSelected) {
         ImGui::PushStyleColor(ImGuiCol_Button, {0.5f,0.5f,0.7f,1});
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.5f,0.5f,0.7f,0.8f});
       }
 
-      if (ImGui::Button(scene.name.c_str(), textBtnSize)) {
+      if (ImGui::Button(buttonLabel.c_str(), textBtnSize)) {
         ctx.project->getScenes().loadScene(scene.id);
         ctx.project->conf.sceneIdLastOpened = scene.id;
         ctx.project->saveConfig();
@@ -514,8 +542,36 @@ void Editor::AssetsBrowser::draw() {
 
       if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
       {
-        ImGui::SetTooltip("Scene: %s\nID: %d", scene.name.c_str(), scene.id);
+        ImGui::SetTooltip("Scene: %s\nID: %d\n\nRight-click for options", displayName.c_str(), scene.id);
       }
+
+      if(ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        ctxSceneId = scene.id;
+        ImGui::OpenPopup("SceneCtxMenu");
+      }
+    }
+
+    if(ImGui::BeginPopup("SceneCtxMenu")) {
+      bool canDelete = scenes.size() > 1;
+
+      if(ImGui::MenuItem(ICON_MDI_CONTENT_COPY " Duplicate")) {
+        ctx.project->getScenes().duplicate(ctxSceneId);
+      }
+
+      if(!canDelete) ImGui::BeginDisabled();
+      if(ImGui::MenuItem(ICON_MDI_TRASH_CAN_OUTLINE " Delete")) {
+        ctx.project->getScenes().remove(ctxSceneId);
+        ctx.project->conf.sceneIdLastOpened = ctx.project->getScenes().getEntries().empty()
+          ? 0 : ctx.project->getScenes().getEntries().front().id;
+        ctx.project->saveConfig();
+      }
+
+      if(!canDelete) {
+        if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+          ImGui::SetMouseCursor(ImGuiMouseCursor_NotAllowed);
+        ImGui::EndDisabled();
+      }
+      ImGui::EndPopup();
     }
   }
 
