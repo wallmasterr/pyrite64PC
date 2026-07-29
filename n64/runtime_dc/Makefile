@@ -117,7 +117,7 @@ $(TARGET): $(OBJS) | dirs
 
 cdi: $(TARGET)
 	@if command -v mkdcdisc >/dev/null 2>&1; then \
-		mkdcdisc -e "$(TARGET)" -o "$(CDI)" -D "$(P64_PROJECT_PATH)/filesystem" -n "$(P64_ROM_NAME)"; \
+		mkdcdisc -e "$(TARGET)" -o "$(CDI)" -D "$(P64_PROJECT_PATH)/filesystem" -n "$(P64_ROM_NAME)" -N; \
 		echo "Built $(CDI)"; \
 	else \
 		echo "mkdcdisc not found; ELF is at $(TARGET) — install mkdcdisc for CDI packaging"; \

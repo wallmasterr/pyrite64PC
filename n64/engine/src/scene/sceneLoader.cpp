@@ -82,7 +82,7 @@ void P64::Scene::loadSceneConfig()
     p64_pc_alert_asset_missing(scenePath);
 #endif
     Log::error("Scene config not found or invalid: %s (project path may be wrong; pass game project path as first argument)", scenePath);
-    std::memset(&conf, 0, sizeof(conf));
+    conf = SceneConf{};
     conf.pipeline = SceneConf::Pipeline::DEFAULT;
     conf.screenWidth = 640;
     conf.screenHeight = 480;
@@ -104,10 +104,11 @@ void P64::Scene::loadSceneConfig()
     return;
   }
 
-  std::memset(&conf, 0, sizeof(conf));
+  /* Zero via value-init (SceneConf is non-trivial; memset trips -Wclass-memaccess). */
+  conf = SceneConf{};
   {
     const size_t ncopy = (size_t)sz < sizeof(conf) ? (size_t)sz : sizeof(conf);
-    std::memcpy(&conf, raw, ncopy);
+    std::memcpy(static_cast<void*>(&conf), raw, ncopy);
   }
   free(raw);
 

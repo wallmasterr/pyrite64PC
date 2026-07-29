@@ -47,8 +47,10 @@ namespace {
 
 void p64_engine_init(void)
 {
-  /* Fresh trace file each run; last line = step before crash */
+  /* Fresh trace file each run; last line = step before crash (PC host only). */
+#ifndef PLATFORM_DC
   { FILE* f = fopen("p64_pc_trace.log", "w"); if (f) fclose(f); }
+#endif
   p64_pc_trace("init_start");
   P64::LD::init();
   p64_pc_trace("LD_init");

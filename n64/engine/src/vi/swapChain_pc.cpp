@@ -40,6 +40,8 @@ namespace P64::VI::SwapChain
       s_displayBuffer = nullptr;
     }
     s_displayBuffer = (uint8_t*)malloc((size_t)DISPLAY_W * DISPLAY_H * DISPLAY_BPP);
+    if (s_displayBuffer)
+      std::memset(s_displayBuffer, 0, (size_t)DISPLAY_W * DISPLAY_H * DISPLAY_BPP);
     std::memset(s_dummyFb, 0, sizeof(s_dummyFb));
     for (int i = 0; i < 3; i++) {
       s_dummyFb[i].flags = FMT_RGBA32;
