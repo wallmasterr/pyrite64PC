@@ -9,9 +9,6 @@
 #include "assets/assetManager.h"
 
 #include <libdragon.h>
-#ifdef PLATFORM_PC
-extern "C" wav64_t* wav64_load(const char* path, int* sz);
-#endif
 
 #include "assets/assetTypes.h"
 #include "lib/logger.h"

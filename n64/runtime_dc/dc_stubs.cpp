@@ -1,43 +1,53 @@
 /**
- * PC stubs for libdragon / tiny3d symbols so the engine links and runs on PC.
- * asset_load delegates to p64_pc_asset_load; most others are no-ops or minimal.
- * Include libdragon before Windows so libdragon's ERROR_BAD_COMMAND/_IO are not clobbered.
+ * Dreamcast stubs for libdragon / tiny3d (same surface as PC runtime).
+ * asset_load -> p64_pc_asset_load (implemented in dc_platform.c for /cd|/rd).
  */
-#ifdef PLATFORM_PC
-#include "pc_platform.h"
+#if defined(PLATFORM_PC) || defined(PLATFORM_DC)
+#include "dc_platform.h"
 #include <pc_compat.h>
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
 #include <cmath>
+#include <math.h>
 
-/* Include libdragon before Windows to avoid macro conflicts (ERROR_BAD_COMMAND, _IO) */
+#ifdef PLATFORM_DC
+/* KOS timer before libdragon — avoids debugcpp.h timer_init() macro clash. */
+#include <arch/timer.h>
+#endif
+
 #include <libdragon.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#undef near
-#undef far
-#else
-#include <SDL3/SDL.h>
+#ifdef PLATFORM_DC
+#include <dc/maple.h>
+#include <dc/maple/controller.h>
+#endif
+
+/* If debugcpp macros leaked in, drop them before defining real stubs. */
+#ifdef joypad_init
+#undef joypad_init
+#endif
+#ifdef timer_init
+#undef timer_init
+#endif
+#ifdef dfs_init
+#undef dfs_init
+#endif
+#ifdef console_init
+#undef console_init
 #endif
 
 /* --- N64 system / timer (n64sys.h) --- */
-/* __boot_* are declared in n64sys.h without extern "C", so define with C++ linkage */
 int __boot_memsize = 8;
 int __boot_consoletype = 0;
 int __boot_tvtype = 0;
 
 extern "C" {
-static uint64_t pc_ticks_base = 0;
 uint64_t get_ticks(void) {
-#ifdef _WIN32
-  LARGE_INTEGER c, f;
-  if (QueryPerformanceCounter(&c) && QueryPerformanceFrequency(&f) && f.QuadPart)
-    return pc_ticks_base + (uint64_t)((c.QuadPart * 1000000) / f.QuadPart);
-  return pc_ticks_base + (uint64_t)GetTickCount64() * 1000;
+#ifdef PLATFORM_DC
+  return (uint64_t)timer_us_gettime64();
 #else
-  return pc_ticks_base + (uint64_t)SDL_GetTicks() * 1000;
+  return 0;
 #endif
 }
 uint64_t get_ticks_us(void) { return get_ticks(); }
@@ -77,14 +87,14 @@ extern "C" int dfs_init(uint32_t) { return 0; }
 extern "C" void enable_interrupts(void) {}
 extern "C" void disable_interrupts(void) {}
 
-/* --- sys_hw_memset16 (e.g. MiniMap.cpp init); PC: fill 16-bit words with value --- */
+/* --- sys_hw_memset16 (e.g. MiniMap.cpp init); host: fill 16-bit words with value --- */
 extern "C" void* sys_hw_memset16(void* ptr, uint16_t value, size_t len) {
   std::uint16_t* p = static_cast<std::uint16_t*>(ptr);
   while (len--) *p++ = value;
   return ptr;
 }
 
-/* --- sys_hw_memset (e.g. Player.cpp init); PC: byte memset --- */
+/* --- sys_hw_memset (e.g. Player.cpp init); host: byte memset --- */
 extern "C" void* sys_hw_memset(void* ptr, uint8_t value, size_t len) {
   std::memset(ptr, static_cast<int>(value), len);
   return ptr;
@@ -100,10 +110,7 @@ extern "C" void data_cache_hit_writeback_invalidate(volatile void* addr, unsigne
   (void)size;
 }
 
-extern "C" size_t malloc_usable_size(void* ptr) {
-  (void)ptr;
-  return 0;
-}
+/* malloc_usable_size: provided by KallistiOS newlib */
 
 /* --- Debug: debug_init_isviewer, debug_init_usblog, debugf are macros in libdragon debug.h when N64_DEBUG is off --- */
 
@@ -420,7 +427,7 @@ static uint32_t rspq_dummy_buf[64];
 extern "C" {
 volatile uint32_t* rspq_cur_pointer = rspq_dummy_buf;
 volatile uint32_t* rspq_cur_sentinel = rspq_dummy_buf + 63;
-void rspq_block_begin(void) {}
+/* rspq_block_begin is inline in rspq.h */
 rspq_block_t* rspq_block_end(void) { return nullptr; }
 void rspq_block_run(rspq_block_t*) {}
 void rspq_next_buffer(void) {}
@@ -455,7 +462,7 @@ surface_t surface_make_sub(surface_t* parent, uint16_t x0, uint16_t y0, uint16_t
 
 /* --- Audio / mixer / wav64 --- */
 extern "C" {
-void audio_init(int, int) {}
+void audio_init(const int, float) {}
 void audio_close(void) {}
 void mixer_init(int) {}
 void mixer_close(void) {}
@@ -504,46 +511,147 @@ void sys_get_heap_stats(heap_stats_t* stats) {
 /* --- VI --- */
 extern "C" {
 void vi_init(void) {}
-void vi_set_dedither(int) {}
-void vi_set_aa_mode(int) {}
-void vi_set_interlaced(int) {}
-void vi_set_divot(int) {}
-void vi_set_gamma(int) {}
-void vi_blank(int) {}
-void vi_install_vblank_handler(void (*)(void*, void*), void*) {}
+void vi_set_dedither(bool) {}
+void vi_set_aa_mode(vi_aa_mode_t) {}
+void vi_set_interlaced(bool) {}
+void vi_set_divot(bool) {}
+void vi_set_gamma(vi_gamma_t) {}
+void vi_blank(bool) {}
+void vi_install_vblank_handler(void (*)(void*), void*) {}
 void vi_write_begin(void) {}
 void vi_write_end(void) {}
 void vi_show(surface_t*) {}
 float vi_get_refresh_rate(void) { return 60.0f; }
 }
 
-/* --- fmath (libdragon fast math; PC uses standard sin/cos) --- */
+/* --- fmath (libdragon declares these; implement with libc after undoing fmath.h macros) --- */
 extern "C" {
-float fm_sinf(float x) { return std::sinf(x); }
-float fm_cosf(float x) { return std::cosf(x); }
+#ifdef sinf
+#undef sinf
+#endif
+#ifdef cosf
+#undef cosf
+#endif
+float fm_sinf(float x) { return sinf(x); }
+float fm_cosf(float x) { return cosf(x); }
 void fm_sincosf(float x, float* sin_out, float* cos_out) {
-  if (sin_out) *sin_out = std::sinf(x);
-  if (cos_out) *cos_out = std::cosf(x);
+  if (sin_out) *sin_out = sinf(x);
+  if (cos_out) *cos_out = cosf(x);
 }
-float fm_sinf_approx(float x, int) { return std::sinf(x); }
+float fm_sinf_approx(float x, int) { return sinf(x); }
 }
 
-/* --- Joypad --- */
+/* --- Joypad (Maple → libdragon joypad API) --- */
 extern "C" {
-void joypad_init(void) {}
-void joypad_poll(void) {}
+#ifdef PLATFORM_DC
+static joypad_inputs_t s_joy_cur[4]{};
+static joypad_buttons_t s_joy_prev[4]{};
+
+static int8_t dc_axis_to_n64(int16_t v) {
+  /* Dreamcast stick is roughly -128..127 already in cont_state_t */
+  if (v > 127) v = 127;
+  if (v < -128) v = -128;
+  return (int8_t)v;
+}
+
+static void dc_fill_inputs(int port, joypad_inputs_t* out) {
+  std::memset(out, 0, sizeof(*out));
+  maple_device_t* dev = maple_enum_type(port, MAPLE_FUNC_CONTROLLER);
+  if (!dev) return;
+  cont_state_t* st = (cont_state_t*)maple_dev_status(dev);
+  if (!st) return;
+
+  out->stick_x = dc_axis_to_n64(st->joyx);
+  out->stick_y = dc_axis_to_n64(-(int16_t)st->joyy); /* N64 Y+ up */
+  out->btn.a = (st->buttons & CONT_A) ? 1 : 0;
+  out->btn.b = (st->buttons & CONT_B) ? 1 : 0;
+  out->btn.z = (st->buttons & CONT_Z) ? 1 : 0;
+  out->btn.start = (st->buttons & CONT_START) ? 1 : 0;
+  out->btn.d_up = (st->buttons & CONT_DPAD_UP) ? 1 : 0;
+  out->btn.d_down = (st->buttons & CONT_DPAD_DOWN) ? 1 : 0;
+  out->btn.d_left = (st->buttons & CONT_DPAD_LEFT) ? 1 : 0;
+  out->btn.d_right = (st->buttons & CONT_DPAD_RIGHT) ? 1 : 0;
+  out->btn.l = ((st->buttons & CONT_X) || st->ltrig > 32) ? 1 : 0;
+  out->btn.r = ((st->buttons & CONT_Y) || st->rtrig > 32) ? 1 : 0;
+  out->btn.c_up = 0;
+  out->btn.c_down = 0;
+  out->btn.c_left = 0;
+  out->btn.c_right = 0;
+  out->analog_l = (uint8_t)((st->ltrig > 255) ? 255 : st->ltrig);
+  out->analog_r = (uint8_t)((st->rtrig > 255) ? 255 : st->rtrig);
+}
+#endif
+
+void joypad_init(void) {
+#ifdef PLATFORM_DC
+  std::memset(s_joy_cur, 0, sizeof(s_joy_cur));
+  std::memset(s_joy_prev, 0, sizeof(s_joy_prev));
+#endif
+}
+void joypad_poll(void) {
+#ifdef PLATFORM_DC
+  for (int i = 0; i < 4; i++) {
+    s_joy_prev[i] = s_joy_cur[i].btn;
+    dc_fill_inputs(i, &s_joy_cur[i]);
+  }
+#endif
+}
 joypad_inputs_t joypad_get_inputs(joypad_port_t port) {
+#ifdef PLATFORM_DC
+  if ((unsigned)port < 4u) return s_joy_cur[port];
+#endif
   (void)port;
   joypad_inputs_t z{};
   return z;
 }
 joypad_8way_t joypad_get_direction(joypad_port_t port, joypad_2d_t axes) {
-  (void)port;
   (void)axes;
-  return JOYPAD_8WAY_NONE;
+  joypad_inputs_t in = joypad_get_inputs(port);
+  const int dead = 40;
+  int dx = 0, dy = 0;
+  if (in.stick_x <= -dead || in.btn.d_left) dx = -1;
+  else if (in.stick_x >= dead || in.btn.d_right) dx = 1;
+  if (in.stick_y <= -dead || in.btn.d_down) dy = -1;
+  else if (in.stick_y >= dead || in.btn.d_up) dy = 1;
+  if (dx == 0 && dy == 0) return JOYPAD_8WAY_NONE;
+  if (dx > 0 && dy > 0) return JOYPAD_8WAY_UP_RIGHT;
+  if (dx < 0 && dy > 0) return JOYPAD_8WAY_UP_LEFT;
+  if (dx > 0 && dy < 0) return JOYPAD_8WAY_DOWN_RIGHT;
+  if (dx < 0 && dy < 0) return JOYPAD_8WAY_DOWN_LEFT;
+  if (dx > 0) return JOYPAD_8WAY_RIGHT;
+  if (dx < 0) return JOYPAD_8WAY_LEFT;
+  if (dy > 0) return JOYPAD_8WAY_UP;
+  return JOYPAD_8WAY_DOWN;
 }
-joypad_buttons_t joypad_get_buttons_pressed(joypad_port_t) { joypad_buttons_t z{}; return z; }
-joypad_buttons_t joypad_get_buttons_held(joypad_port_t) { joypad_buttons_t z{}; return z; }
+joypad_buttons_t joypad_get_buttons_pressed(joypad_port_t port) {
+  joypad_buttons_t z{};
+#ifdef PLATFORM_DC
+  if ((unsigned)port >= 4u) return z;
+  const joypad_buttons_t cur = s_joy_cur[port].btn;
+  const joypad_buttons_t prev = s_joy_prev[port];
+  z.a = cur.a && !prev.a;
+  z.b = cur.b && !prev.b;
+  z.z = cur.z && !prev.z;
+  z.start = cur.start && !prev.start;
+  z.d_up = cur.d_up && !prev.d_up;
+  z.d_down = cur.d_down && !prev.d_down;
+  z.d_left = cur.d_left && !prev.d_left;
+  z.d_right = cur.d_right && !prev.d_right;
+  z.l = cur.l && !prev.l;
+  z.r = cur.r && !prev.r;
+#else
+  (void)port;
+#endif
+  return z;
+}
+joypad_buttons_t joypad_get_buttons_held(joypad_port_t port) {
+#ifdef PLATFORM_DC
+  if ((unsigned)port < 4u) return s_joy_cur[port].btn;
+#endif
+  (void)port;
+  joypad_buttons_t z{};
+  return z;
+}
 }
 
 /* --- T3D / TPX (minimal stubs); Windows "near"/"far" macros break tiny3d params --- */
@@ -646,7 +754,7 @@ char rsp_bigtex_data_start[1];
 char rsp_bigtex_data_end[1];
 }
 
-/* --- WAV64 (stub: no audio on PC yet) --- */
+/* --- WAV64 (stub: no audio on host yet) --- */
 extern "C" {
 wav64_t* wav64_load(const char* path, wav64_loadparms_t* parms) {
   (void)path;
@@ -750,6 +858,78 @@ extern "C" void rspq_profile_get_data(void*) {}
 
 /* RSPQ deferred callback and block free (e.g. user script Credits.cpp destroy) */
 extern "C" void rspq_block_free(rspq_block_t* block) { (void)block; }
-extern "C" void rspq_call_deferred(void (*fn)(void*), void* arg) { if (fn) fn(arg); }
+/* rspq_call_deferred is inline in rspq.h */
 
-#endif /* PLATFORM_PC */
+/* --- Extra fmath / fgeom (headers only from libdragon; implement for host) --- */
+extern "C" {
+#ifdef atan2f
+#undef atan2f
+#endif
+float fm_atan2f(float y, float x) { return atan2f(y, x); }
+
+void fm_vec3_rotate(fm_vec3_t* out, const fm_vec3_t* in, const fm_quat_t* q) {
+  if (!out || !in || !q) return;
+  const float tx = 2.0f * (q->y * in->z - q->z * in->y);
+  const float ty = 2.0f * (q->z * in->x - q->x * in->z);
+  const float tz = 2.0f * (q->x * in->y - q->y * in->x);
+  out->x = in->x + q->w * tx + (q->y * tz - q->z * ty);
+  out->y = in->y + q->w * ty + (q->z * tx - q->x * tz);
+  out->z = in->z + q->w * tz + (q->x * ty - q->y * tx);
+}
+
+void fm_quat_mul(fm_quat_t* out, const fm_quat_t* a, const fm_quat_t* b) {
+  if (!out || !a || !b) return;
+  fm_quat_t r;
+  r.x = a->w * b->x + a->x * b->w + a->y * b->z - a->z * b->y;
+  r.y = a->w * b->y - a->x * b->z + a->y * b->w + a->z * b->x;
+  r.z = a->w * b->z + a->x * b->y - a->y * b->x + a->z * b->w;
+  r.w = a->w * b->w - a->x * b->x - a->y * b->y - a->z * b->z;
+  *out = r;
+}
+}
+
+/* --- RSPQ block reuse / placeholders --- */
+extern "C" {
+void rspq_block_begin_reuse(rspq_block_t* reuse_block) { (void)reuse_block; }
+void rspq_block_set_placeholder(rspq_block_t* ph, rspq_block_t* ph_target) {
+  (void)ph;
+  (void)ph_target;
+}
+}
+
+/* --- XM64 / T3D extras --- */
+#include <t3d/t3d.h>
+extern "C" {
+void xm64player_set_loop(xm64player_t* player, bool loop) { (void)player; (void)loop; }
+void xm64player_set_vol(xm64player_t* player, float vol) { (void)player; (void)vol; }
+int xm64player_num_channels(xm64player_t* player) { (void)player; return 0; }
+void xm64player_play(xm64player_t* player, int first_ch) { (void)player; (void)first_ch; }
+void xm64player_open(xm64player_t* player, const char* path) { (void)player; (void)path; }
+void xm64player_close(xm64player_t* player) { (void)player; }
+void __debug_init_cpp(void) {}
+void t3d_viewport_set_ortho(T3DViewport* vp, float left, float right, float bottom, float top, float n, float f) {
+  (void)vp; (void)left; (void)right; (void)bottom; (void)top; (void)n; (void)f;
+}
+}
+void t3d_state_set_lighting_mode(enum T3DLightingMode mode) { (void)mode; }
+
+/* --- N64 linker section symbols used by Mem::getStaticMemInfo --- */
+extern "C" {
+uint32_t __text_start[1]{};
+uint32_t __text_end[1]{};
+uint32_t __data_start[1]{};
+uint32_t __data_end[1]{};
+uint32_t __bss_start[1]{};
+}
+/* n64sys.h declares __bss_end with C++ linkage */
+char __bss_end[1]{};
+
+/* --- RSP overlay meta markers --- */
+extern "C" {
+char rsp_hdr_meta_start[1]{};
+char rsp_hdr_meta_end[1]{};
+char rsp_bigtex_meta_start[1]{};
+char rsp_bigtex_meta_end[1]{};
+}
+
+#endif /* PLATFORM_PC || PLATFORM_DC */

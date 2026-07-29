@@ -12,8 +12,11 @@
 #include "../utils/proc.h"
 #include "../utils/string.h"
 #include "../utils/textureFormats.h"
+#include "../utils/toolchain.h"
 #include "romMetaBuilder.h"
 #include "../editor/imgui/notification.h"
+#include <cstdlib>
+#include <cctype>
 
 namespace fs = std::filesystem;
 using AT = Project::FileType;
@@ -257,7 +260,7 @@ bool Build::buildProject(const std::string &configPath, bool runN64Make)
   }
 
   if(success) {
-    Utils::Logger::log(runN64Make ? "Build done!" : "Project data ready for PC build.");
+    Utils::Logger::log(runN64Make ? "Build done!" : "Project data ready.");
   } else {
     Utils::Logger::log("Build failed!", Utils::Logger::LEVEL_ERROR);
   }
@@ -303,6 +306,9 @@ bool Build::buildProjectPC(const std::string &configPath)
     {"{{PROJECT_NAME}}",  project.conf.name},
   });
   Utils::FS::saveTextFile((buildPcDir / "CMakeLists.txt").string(), cmakeLists);
+  /* Lets the PC .exe find assets when the compile-time path is wrong or the project was moved. */
+  Utils::FS::saveTextFile((buildPcDir / "p64_project_root.txt").string(),
+                          fs::absolute(path).generic_string() + "\n");
 
   // Prepend MSYS2 toolchain to PATH so cmake/ninja are found when editor is not launched from MSYS2 shell
   const char* oldPathEnv = std::getenv("PATH");
@@ -344,6 +350,167 @@ bool Build::buildProjectPC(const std::string &configPath)
 #endif
 }
 
+bool Build::buildProjectDC(const std::string &configPath)
+{
+  if (!buildProject(configPath, false)) {
+    return false;
+  }
+
+  Project::Project project{configPath};
+  auto path = project.getPath();
+  fs::path buildDcDir = fs::path{path} / "build-dc";
+  fs::create_directories(buildDcDir);
+
+  fs::path pyrite64Root = Utils::Proc::getAppResourcePath();
+  if (pyrite64Root.empty() || !fs::exists(pyrite64Root / "data")) {
+    pyrite64Root = Utils::Proc::getSelfPath().parent_path();
+  }
+  for (int i = 0; i < 5 && !fs::exists(pyrite64Root / "data" / "build" / "Makefile.dc.template"); ++i) {
+    if (pyrite64Root.has_parent_path())
+      pyrite64Root = pyrite64Root.parent_path();
+    else
+      break;
+  }
+  if (!fs::exists(pyrite64Root / "data" / "build" / "Makefile.dc.template")) {
+    Utils::Logger::log("Dreamcast build template not found. Ensure data/build/Makefile.dc.template exists.", Utils::Logger::LEVEL_ERROR);
+    return false;
+  }
+
+  /* SH-4 kos-c++ only resolves MSYS paths (/c/...), not Windows C:/... */
+  auto toMsysPath = [](std::string s) {
+    for (char& c : s) if (c == '\\') c = '/';
+    while (s.size() > 1 && s.back() == '/') s.pop_back();
+    if (s.size() >= 2 && std::isalpha(static_cast<unsigned char>(s[0])) && s[1] == ':') {
+      char drive = static_cast<char>(std::tolower(static_cast<unsigned char>(s[0])));
+      s = std::string("/") + drive + s.substr(2);
+    }
+    return s;
+  };
+
+  auto templateStr = Utils::FS::loadTextFile((pyrite64Root / "data" / "build" / "Makefile.dc.template").string());
+  auto makefile = Utils::replaceAll(templateStr, {
+    {"{{PYRITE64_ROOT}}", toMsysPath(pyrite64Root.generic_string())},
+    {"{{PROJECT_PATH}}",  toMsysPath(fs::absolute(path).generic_string())},
+    {"{{ROM_NAME}}",     project.conf.romName},
+    {"{{PROJECT_NAME}}",  project.conf.name},
+  });
+  Utils::FS::saveTextFile((buildDcDir / "Makefile").string(), makefile);
+  Utils::FS::saveTextFile((buildDcDir / "p64_project_root.txt").string(),
+                          fs::absolute(path).generic_string() + "\n");
+
+  fs::path runtimeDc = pyrite64Root / "n64" / "runtime_dc";
+  if (!fs::exists(runtimeDc / "Makefile")) {
+    Utils::Logger::log("Dreamcast runtime missing (n64/runtime_dc/Makefile).", Utils::Logger::LEVEL_ERROR);
+    return false;
+  }
+
+  auto findKosBase = []() -> fs::path {
+    if (const char* env = std::getenv("KOS_BASE"); env && env[0] && fs::exists(env))
+      return fs::path{env};
+    const char* candidates[] = {
+      "/opt/toolchains/dc/kos",
+      "C:/msys64/opt/toolchains/dc/kos",
+      "C:/opt/toolchains/dc/kos",
+      "C:/dreamcast/kos",
+      "C:/kos",
+    };
+    for (const char* c : candidates) {
+      fs::path p{c};
+      if (fs::exists(p / "environ.sh") || fs::exists(p / "Makefile"))
+        return p;
+    }
+    // Scan MSYS home/<user>/kos directories
+    fs::path msysHome{"C:/msys64/home"};
+    if (fs::exists(msysHome)) {
+      for (auto& ent : fs::directory_iterator(msysHome)) {
+        if (!ent.is_directory()) continue;
+        for (const char* name : {"kos", "KallistiOS", "dreamcast/kos"}) {
+          fs::path p = ent.path() / name;
+          if (fs::exists(p / "environ.sh"))
+            return p;
+        }
+      }
+    }
+    return {};
+  };
+
+  fs::path kosBase = findKosBase();
+  if (kosBase.empty()) {
+    Utils::Logger::log(
+      "KallistiOS not found. Install KOS and set KOS_BASE (or place it at /opt/toolchains/dc/kos).",
+      Utils::Logger::LEVEL_ERROR);
+    return false;
+  }
+  Utils::Logger::log("Using KallistiOS at " + kosBase.generic_string());
+
+  /* Newer clones ship doc/environ.sh.sample; install may not have copied it yet. */
+  if (!fs::exists(kosBase / "environ.sh")) {
+    fs::path sample = kosBase / "doc" / "environ.sh.sample";
+    if (fs::exists(sample)) {
+      std::error_code ec;
+      fs::copy_file(sample, kosBase / "environ.sh", ec);
+      if (ec) {
+        Utils::Logger::log("Failed to create environ.sh from sample: " + ec.message(), Utils::Logger::LEVEL_ERROR);
+        return false;
+      }
+      Utils::Logger::log("Created environ.sh from doc/environ.sh.sample");
+    } else {
+      Utils::Logger::log(
+        "Missing environ.sh in KOS_BASE. Finish install_kos.bat (or copy doc/environ.sh.sample to environ.sh).",
+        Utils::Logger::LEVEL_ERROR);
+      return false;
+    }
+  }
+
+  fs::path shElfGcc = kosBase.parent_path() / "sh-elf" / "bin" / "sh-elf-gcc.exe";
+  fs::path shElfGccUnix = kosBase.parent_path() / "sh-elf" / "bin" / "sh-elf-gcc";
+  if (!fs::exists(shElfGcc) && !fs::exists(shElfGccUnix)) {
+    Utils::Logger::log(
+      "Dreamcast SH-4 toolchain not found (expected next to KOS at "
+      + (kosBase.parent_path() / "sh-elf").generic_string()
+      + "). Run install_kos.bat and wait for dc-chain to finish — that step can take 1-3+ hours.",
+      Utils::Logger::LEVEL_ERROR);
+    return false;
+  }
+
+  std::string kosUnix = toMsysPath(kosBase.generic_string());
+  std::string buildUnix = toMsysPath(fs::absolute(buildDcDir).generic_string());
+  std::string environSh = kosUnix + "/environ.sh";
+
+  Utils::Logger::log("Building Dreamcast ELF/CDI (KallistiOS)...");
+  /* toolchain.runCmdSyncLogged wraps in bash -lc '...', so avoid single quotes and $(...) inside. */
+  std::string dcBin = toMsysPath((kosBase.parent_path() / "bin").generic_string());
+  std::string inner =
+    "set -e; "
+    "export KOS_BASE=\"" + kosUnix + "\"; "
+    "source \"" + environSh + "\"; "
+    "export PATH=\"" + dcBin + ":$PATH\"; "
+    "make -C \"" + buildUnix + "\" -j4";
+
+  Utils::Toolchain toolchain{};
+  toolchain.scan();
+  bool success = toolchain.runCmdSyncLogged(inner);
+
+  fs::path elfPath = buildDcDir / (project.conf.romName + "_dc.elf");
+  if (success && !fs::exists(elfPath)) {
+    Utils::Logger::log(
+      "Dreamcast make returned success but ELF is missing: " + elfPath.generic_string(),
+      Utils::Logger::LEVEL_ERROR);
+    success = false;
+  }
+
+  if (success) {
+    Utils::Logger::log("Dreamcast build done! Output: " + elfPath.generic_string());
+    if (fs::exists(buildDcDir / (project.conf.romName + "_dc.cdi")))
+      Utils::Logger::log("CDI: " + (buildDcDir / (project.conf.romName + "_dc.cdi")).generic_string());
+    else
+      Utils::Logger::log("ELF built; install mkdcdisc for CDI packaging.", Utils::Logger::LEVEL_WARN);
+  } else {
+    Utils::Logger::log("Dreamcast build failed!", Utils::Logger::LEVEL_ERROR);
+  }
+  return success;
+}
+
 bool Build::cleanProject(const Project::Project &project, const CleanArgs &args)
 {
   Utils::Logger::log("Clean Project: " + project.getPath());
@@ -356,6 +523,8 @@ bool Build::cleanProject(const Project::Project &project, const CleanArgs &args)
   }
   if(args.code) {
     fs::remove_all(projPath / "build");
+    fs::remove_all(projPath / "build-pc");
+    fs::remove_all(projPath / "build-dc");
   }
   if(args.engine) {
     fs::remove_all(projPath / "engine" / "build");

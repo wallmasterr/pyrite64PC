@@ -132,7 +132,9 @@ namespace P64
       void restoreInterpolatedTransforms();
 
       void loadSceneConfig();
-      Object* loadObject(uint8_t* &objFile, std::function<void(Object&)> callback = {}, bool deferComponentInit = false);
+      /** fileEnd: exclusive end of blob; nullptr = unbounded (e.g. prefab in RAM). */
+      Object* loadObject(uint8_t* &objFile, std::function<void(Object&)> callback = {}, bool deferComponentInit = false,
+                         const uint8_t* fileEnd = nullptr);
       void runPendingComponentInit();
       void runPendingEvents();
       void loadScene();

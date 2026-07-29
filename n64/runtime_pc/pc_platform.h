@@ -6,12 +6,23 @@
 #ifndef P64_PC_PLATFORM_H
 #define P64_PC_PLATFORM_H
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /** Set the project root path (e.g. from P64_PROJECT_PATH or argv[1]). */
 void p64_pc_set_project_path(const char* path);
+
+/**
+ * If filesystem/p64/conf is missing at path_io, try:
+ *   - p64_project_root.txt next to the executable (written by the editor PC build)
+ *   - parent folder of the executable (exe in .../build-pc/, assets in .../filesystem/)
+ * path_io: in/out buffer (mutable). path_cap: size including NUL.
+ * Returns 1 if conf exists at the final path, else 0 (path_io may be unchanged).
+ */
+int p64_pc_discover_project_path(char* path_io, size_t path_cap);
 
 /** Get the current project path. Returns "" if not set. */
 const char* p64_pc_get_project_path(void);
@@ -27,6 +38,12 @@ void* p64_pc_asset_load(const char* path, unsigned long* size_out);
 
 /** Append one line to p64_pc_trace.log (for crash diagnosis; last line = step before crash). */
 void p64_pc_trace(const char* step);
+
+/**
+ * Windows: MessageBox with disk path for a failed rom:/p64/... load (e.g. missing scene blob).
+ * No-op on other platforms. Safe to call from engine when PLATFORM_PC.
+ */
+void p64_pc_alert_asset_missing(const char* rom_style_path);
 
 /**
  * Get the current scene clear color (RGBA 0-255). Call after p64_engine_run_frame.

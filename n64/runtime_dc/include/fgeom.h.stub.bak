@@ -1,9 +1,18 @@
 /**
- * Minimal fgeom.h for PC build when libdragon does not provide it.
+ * Minimal fgeom.h for PC/DC host builds.
  * Defines float geometry types and C API used by the engine and tiny3d.
+ * Also claims libdragon's include guards so quoted includes of fgeom.h/fgeom2d.h
+ * from libdragon.h do not redefine types.
  */
 #ifndef FGEOM_H
 #define FGEOM_H
+/* Match libdragon so #include "fgeom.h" / "fgeom2d.h" from libdragon.h are no-ops. */
+#ifndef LIBDRAGON_FGEOM_H
+#define LIBDRAGON_FGEOM_H
+#endif
+#ifndef LIBDRAGON_FGEOM2D_H
+#define LIBDRAGON_FGEOM2D_H
+#endif
 
 #include <math.h>
 

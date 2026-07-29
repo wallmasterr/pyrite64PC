@@ -38,12 +38,10 @@ extern "C" coroutine_t* coro_get_current(void);
 extern "C" void coro_yield(void);
 #endif
 
+/* Deferred RSP callback — inline in rspq.h on current libdragon */
 /* Current RDP attach target (e.g. user scripts use rdpq_get_attached()->width); defined in pc_stubs.cpp */
 struct surface_s;
 extern "C" const struct surface_s* rdpq_get_attached(void);
-
-/* Deferred RSP callback (e.g. Credits.cpp destroy calls rspq_block_free via this); defined in pc_stubs.cpp */
-extern "C" void rspq_call_deferred(void (*fn)(void*), void* arg);
 
 /* Match libdragon n64sys.h signatures so force-include + libdragon.h do not conflict. */
 extern "C" void* sys_hw_memset16(void* ptr, uint16_t value, size_t len);
@@ -52,9 +50,6 @@ extern "C" void* sys_hw_memset(void* ptr, uint8_t value, size_t len);
 /* N64 cache ops (e.g. globalSetup.cpp); no-op on PC, defined in pc_stubs.cpp */
 extern "C" void data_cache_hit_writeback(volatile const void* addr, unsigned long size);
 extern "C" void data_cache_hit_writeback_invalidate(volatile void* addr, unsigned long size);
-
-/* newlib/glibc heap size query; stubbed on host (scene.cpp mem tracking). */
-extern "C" size_t malloc_usable_size(void* ptr);
 
 #endif /* PLATFORM_PC */
 #endif /* PC_COMPAT_H */

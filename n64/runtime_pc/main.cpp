@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -114,10 +115,36 @@ int main(int argc, char* argv[])
     /* Required when using SDL_MAIN_HANDLED: tell SDL the app entry point is ready. */
     SDL_SetMainReady();
 
-    const char* projectPath = P64_PROJECT_PATH;
+    char projectBuf[1024];
+    std::memset(projectBuf, 0, sizeof(projectBuf));
     if (argc > 1)
-        projectPath = argv[1];
-    p64_pc_set_project_path(projectPath);
+        (void)std::snprintf(projectBuf, sizeof(projectBuf), "%.900s", argv[1]);
+    else
+        (void)std::snprintf(projectBuf, sizeof(projectBuf), "%s", P64_PROJECT_PATH);
+
+    (void)p64_pc_discover_project_path(projectBuf, sizeof(projectBuf));
+    p64_pc_set_project_path(projectBuf);
+
+    {
+        /* Early sanity check so a wrong export path doesn't silently render black/red. */
+        unsigned long confSize = 0;
+        void* conf = p64_pc_asset_load("rom:/p64/conf", &confSize);
+        if (!conf) {
+            char msg[768];
+            (void)snprintf(
+                msg, sizeof(msg),
+                "Could not load project asset 'rom:/p64/conf'.\n\n"
+                "Tried project root:\n%s\n\n"
+                "Expected file:\n%s\\filesystem\\p64\\conf\n\n"
+                "Run \"Build for PC (GLES2)\" in the editor, or drag your project folder onto the .exe / pass it as argv[1].",
+                p64_pc_get_project_path(),
+                p64_pc_get_project_path()
+            );
+            showError("Project assets not found", msg);
+            return 1;
+        }
+        free(conf);
+    }
 
 #ifdef _WIN32
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "windows");
@@ -160,7 +187,7 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    printf("Project path: %s\n", projectPath);
+    printf("Project path: %s\n", projectBuf);
     p64_engine_init();
     printf("Engine inited. Game loop running. Close window or ESC to exit.\n");
 

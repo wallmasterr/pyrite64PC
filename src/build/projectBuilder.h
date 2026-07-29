@@ -40,6 +40,7 @@ namespace Build
 
   bool buildProject(const std::string &path, bool runN64Make = true);
   bool buildProjectPC(const std::string &configPath);
+  bool buildProjectDC(const std::string &configPath);
 
   struct CleanArgs
   {

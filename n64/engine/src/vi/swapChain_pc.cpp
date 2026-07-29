@@ -42,10 +42,10 @@ namespace P64::VI::SwapChain
     s_displayBuffer = (uint8_t*)malloc((size_t)DISPLAY_W * DISPLAY_H * DISPLAY_BPP);
     std::memset(s_dummyFb, 0, sizeof(s_dummyFb));
     for (int i = 0; i < 3; i++) {
+      s_dummyFb[i].flags = FMT_RGBA32;
       s_dummyFb[i].width = (uint16_t)DISPLAY_W;
       s_dummyFb[i].height = (uint16_t)DISPLAY_H;
       s_dummyFb[i].stride = DISPLAY_W * DISPLAY_BPP;
-      s_dummyFb[i].flags = 0;
       s_dummyFb[i].buffer = (i == 0) ? s_displayBuffer : nullptr;
     }
     s_deltaTime = 1.0f / 60.0f;

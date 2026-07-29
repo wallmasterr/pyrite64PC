@@ -6,6 +6,8 @@
 
 #include "scene/sceneManager.h"
 
+#include <cstdio>
+
 #include "scene/scene.h"
 #include "script/globalScript.h"
 #include "vi/swapChain.h"
@@ -25,6 +27,14 @@ namespace {
 namespace P64::SceneManager
 {
   void load(uint16_t newSceneId) {
+    /* Editor builds filesystem/p64/s0001+ from data/scenes/<id>; id 0 => s0000 is never emitted. */
+    if (newSceneId == 0) {
+#ifdef PLATFORM_PC
+      p64_pc_trace("SceneManager_load_0_clamped_to_1");
+#endif
+      std::fprintf(stderr, "[Pyrite64] SceneManager::load(0): no s0000; using scene 1. Fix boot scene or scripts.\n");
+      newSceneId = 1;
+    }
     nextSceneId = newSceneId;
   }
 

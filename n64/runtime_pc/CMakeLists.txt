@@ -37,6 +37,7 @@ list(APPEND ENGINE_SOURCES
 add_library(p64_engine STATIC ${ENGINE_SOURCES})
 target_compile_definitions(p64_engine PRIVATE PLATFORM_PC)
 target_include_directories(p64_engine PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${ENGINE_DIR}/include ${ENGINE_DIR}/src
   ${PYRITE64_ROOT}/vendored/libdragon/include

@@ -24,6 +24,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "pc_platform.h"
+
 extern "C" void p64_pc_trace(const char* step);
 
 extern "C" void p64_engine_init(void);
@@ -68,8 +70,21 @@ void p64_engine_init(void)
     if (tmp) {
       std::memcpy(&s_projectConf, tmp, sizeof(ProjectConf));
       free(tmp);
+    } else {
+      /* Matches src/project/project.h default when conf is missing (avoids scene 0 / s0000 vs editor scenes starting at 1). */
+      p64_pc_trace("conf_missing_scene_defaults_1");
+      s_projectConf.sceneIdOnBoot = 1;
+      s_projectConf.sceneIdOnReset = 1;
     }
   }
+  /* Editor creates scenes under data/scenes/<id> starting at 1; conf with boot/reset 0 looks for s0000 which is never built. */
+  if (s_projectConf.sceneIdOnBoot == 0u) {
+    p64_pc_trace("conf_boot_scene_0_clamped_to_1");
+    s_projectConf.sceneIdOnBoot = 1u;
+  }
+  if (s_projectConf.sceneIdOnReset == 0u)
+    s_projectConf.sceneIdOnReset = 1u;
+
   p64_pc_trace("conf_load");
 
   for (uint32_t fontIdx = 0; fontIdx < s_projectConf.autoLoadFonts.size(); fontIdx++) {
@@ -92,6 +107,13 @@ void p64_engine_init(void)
   uint16_t sceneId = (sys_reset_type() == RESET_COLD)
     ? (uint16_t)s_projectConf.sceneIdOnBoot
     : (uint16_t)s_projectConf.sceneIdOnReset;
+  if (sceneId == 0u)
+    sceneId = 1u; /* match SceneManager::load(); id 0 has no s0000 asset */
+  {
+    char line[96];
+    std::snprintf(line, sizeof line, "SceneManager_load_scene_%u", (unsigned)sceneId);
+    p64_pc_trace(line);
+  }
   P64::SceneManager::load(sceneId);
   p64_pc_trace("init_done");
 }

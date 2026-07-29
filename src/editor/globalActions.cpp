@@ -84,12 +84,6 @@ namespace Editor::Actions
          ctx.project = nullptr;
          return false;
        }
-       if (ctx.project) {
-         std::error_code ec;
-         auto absPath = std::filesystem::absolute(std::filesystem::path(path), ec);
-         ctx.prefs.lastProjectPath = ec ? path : absPath.string();
-         ctx.prefs.save();
-       }
        return ctx.project != nullptr;
      });
 
@@ -232,6 +226,35 @@ namespace Editor::Actions
           Editor::Noti::add(Editor::Noti::Type::ERROR, "PC build failed!");
         } else {
           Editor::Noti::add(Editor::Noti::Type::INFO, "PC build (GLES2) finished.");
+        }
+      }, ctx.project->getConfigPath());
+
+      return true;
+    });
+
+    registerAction(Type::PROJECT_BUILD_DC, [](const std::string&) {
+      if (ctx.isBuildOrRunning()) return false;
+      if (!ctx.project) return false;
+
+      ImGui::SetWindowFocus("Log");
+
+      ctx.project->save();
+      ctx.editorScene->save();
+
+      ctx.futureBuildRun = std::async(std::launch::async, [](std::string configPath) {
+        bool result = false;
+        try {
+          result = Build::buildProjectDC(configPath);
+        } catch (const std::exception &e) {
+          auto error = "Dreamcast build failed: " + std::string(e.what());
+          Utils::Logger::log(error, Utils::Logger::LEVEL_ERROR);
+          Editor::Noti::add(Editor::Noti::Type::ERROR, error);
+          return;
+        }
+        if (!result) {
+          Editor::Noti::add(Editor::Noti::Type::ERROR, "Dreamcast build failed!");
+        } else {
+          Editor::Noti::add(Editor::Noti::Type::INFO, "Dreamcast build finished.");
         }
       }, ctx.project->getConfigPath());
 

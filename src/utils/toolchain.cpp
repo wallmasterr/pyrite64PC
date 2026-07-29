@@ -124,8 +124,10 @@ void Utils::Toolchain::install()
   }
 
   installing.store(true);
-  bool isInstalled = state.hasToolchain && state.hasLibdragon && state.hasTiny3d;
-  std::thread installThread(runInstallScript, state.mingwPath, isInstalled);
+  // Force a rebuild when tools exist but headers are too old for the editor.
+  bool forceUpdate = (state.hasToolchain && state.hasLibdragon && state.hasTiny3d)
+                  || !state.upToDateLibs;
+  std::thread installThread(runInstallScript, state.mingwPath, forceUpdate);
   installThread.detach();
 }
 

@@ -79,6 +79,10 @@ int main()
 	  projectConf = *tmp;
     free(tmp);
 	}
+  if (projectConf.sceneIdOnBoot == 0u)
+    projectConf.sceneIdOnBoot = 1u;
+  if (projectConf.sceneIdOnReset == 0u)
+    projectConf.sceneIdOnReset = 1u;
 
   // auto-load fonts marked as such
   for(uint32_t fontIdx=0; fontIdx < projectConf.autoLoadFonts.size(); fontIdx++) {

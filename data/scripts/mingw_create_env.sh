@@ -70,21 +70,37 @@ fi
 
 cd libdragon
 
+git fetch origin preview
 git checkout preview
-git pull
+git reset --hard origin/preview
 make clean && make -C tools clean
 
-# Build libdragon
+# Rebuild if tools missing, forced, or headers lack APIs the editor requires
+need_libdragon=0
 if [[ ! -f "$sdkpath/bin/n64tool.exe" || "${FORCE_UPDATE:-}" == "true" ]]; then
+  need_libdragon=1
+fi
+if [[ ! -f "$sdkpath/mips64-elf/include/fgeom.h" ]] \
+   || ! grep -q 'operator==(fm_vec3_t' "$sdkpath/mips64-elf/include/fgeom.h" 2>/dev/null; then
+  echo "Installed libdragon headers are out of date (missing fm_vec3_t operator==) — rebuilding"
+  need_libdragon=1
+fi
+if [[ ! -f "$sdkpath/mips64-elf/include/rspq.h" ]] \
+   || ! grep -q 'rspq_block_begin_reuse' "$sdkpath/mips64-elf/include/rspq.h" 2>/dev/null; then
+  echo "Installed libdragon headers are out of date (missing rspq_block_begin_reuse) — rebuilding"
+  need_libdragon=1
+fi
+
+if [[ "$need_libdragon" == "1" ]]; then
     echo "Building libdragon..."
     make -j6 libdragon && make -j6 tools
     make install || sudo -E make install
-    make -C tools install || sudo -C tools install
+    make -C tools install || sudo -E make -C tools install
     # Build an example as sanity check
     make -C examples/brew-volley clean
     make -C examples/brew-volley
 else
-    echo "Libdragon already installed"    
+    echo "Libdragon already installed and up to date"
 fi
 
 cd ..
@@ -98,16 +114,27 @@ fi
 
 cd tiny3d
 
-git pull
+git fetch origin
+git pull --ff-only || true
 make clean
 
-# Build Tiny3D
+need_tiny3d=0
 if [[ ! -f "$sdkpath/bin/gltf_to_t3d.exe" || "${FORCE_UPDATE:-}" == "true" ]]; then
+  need_tiny3d=1
+fi
+if [[ ! -f "$sdkpath/mips64-elf/include/t3d/t3d.h" ]] \
+   || ! grep -q 't3d_state_set_lighting_mode' "$sdkpath/mips64-elf/include/t3d/t3d.h" 2>/dev/null; then
+  echo "Installed tiny3d headers are out of date — rebuilding"
+  need_tiny3d=1
+fi
+
+# Build Tiny3D
+if [[ "$need_tiny3d" == "1" ]]; then
     echo "Building Tiny3D..."
     make -j6
     make install || sudo -E make install
 else
-    echo "Tiny3D already installed"    
+    echo "Tiny3D already installed and up to date"
 fi
 
 # Tools
