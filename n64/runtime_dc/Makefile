@@ -58,8 +58,8 @@ ENGINE_CPP := \
 ENGINE_CPP := $(filter-out $(ENGINE)/src/main.cpp,$(ENGINE_CPP))
 ENGINE_CPP := $(filter-out $(ENGINE)/src/vi/swapChain.cpp,$(ENGINE_CPP))
 
-RT_CPP := $(RT)/main.cpp $(RT)/dc_stubs.cpp
-RT_C   := $(RT)/dc_platform.c
+RT_CPP := $(RT)/main.cpp $(RT)/dc_stubs.cpp $(RT)/dc_soft3d.cpp
+RT_C   := $(RT)/dc_platform.c $(RT)/dc_dca.c $(PYRITE64_ROOT)/vendored/libdragon/tools/common/lz4/lz4.c
 
 GAME_CPP := \
   $(wildcard $(P64_PROJECT_PATH)/src/user/*.cpp) \
@@ -75,12 +75,14 @@ RT_OBJS_C   := $(foreach s,$(RT_C),$(call pathobj,$(s)))
 GAME_OBJS   := $(foreach s,$(GAME_CPP),$(call pathobj,$(s)))
 OBJS := $(ENGINE_OBJS) $(RT_OBJS_CPP) $(RT_OBJS_C) $(GAME_OBJS)
 
+LZ4_INC := $(PYRITE64_ROOT)/vendored/libdragon/tools/common/lz4
+
 COMMON_FLAGS := \
   -DPLATFORM_PC -DPLATFORM_DC -DNDEBUG -O2 \
   -DP64_PROJECT_PATH=\"$(P64_PROJECT_PATH)\" \
   -I$(RT) -I$(RT)/include \
   -I$(ENGINE)/include -I$(ENGINE)/src \
-  -I$(LD_INC) -I$(T3D) \
+  -I$(LD_INC) -I$(T3D) -I$(LZ4_INC) \
   -I$(P64_PROJECT_PATH)/src \
   -ffunction-sections -fdata-sections
 

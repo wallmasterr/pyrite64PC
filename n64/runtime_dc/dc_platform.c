@@ -8,8 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define P64_PREFIX "rom:/p64/"
-#define P64_PREFIX_LEN (sizeof(P64_PREFIX) - 1)
+#define ROM_PREFIX "rom:/"
+#define ROM_PREFIX_LEN (sizeof(ROM_PREFIX) - 1)
 
 static char s_asset_root[64] = "/cd";
 
@@ -62,14 +62,22 @@ void p64_pc_alert_asset_missing(const char* rom_style_path)
          rom_style_path ? rom_style_path : "?", s_asset_root);
 }
 
+/**
+ * Map libdragon-style paths onto the CDI filesystem tree:
+ *   rom:/p64/a      → /cd/p64/a
+ *   rom:/box.t3dm   → /cd/box.t3dm
+ * (mkdcdisc -D filesystem puts both under the disc root.)
+ */
 static int build_full_path(const char* path, char* out, size_t out_size)
 {
   const char* sub = path;
   if (!out || out_size == 0 || !path)
     return 0;
-  if (strncmp(path, P64_PREFIX, P64_PREFIX_LEN) == 0)
-    sub = path + P64_PREFIX_LEN;
-  int n = snprintf(out, out_size, "%s/p64/%s", s_asset_root, sub);
+  if (strncmp(path, ROM_PREFIX, ROM_PREFIX_LEN) == 0)
+    sub = path + ROM_PREFIX_LEN;
+  while (*sub == '/')
+    ++sub;
+  int n = snprintf(out, out_size, "%s/%s", s_asset_root, sub);
   return n > 0 && (size_t)n < out_size;
 }
 
@@ -117,12 +125,20 @@ void* p64_pc_asset_load(const char* path, unsigned long* size_out)
   if (buf)
     return buf;
 
+  printf("[p64] asset miss %s -> %s\n", path, full);
+
   /* Fallback: try the other mount if primary fails */
+  const char* sub = path;
+  if (strncmp(path, ROM_PREFIX, ROM_PREFIX_LEN) == 0)
+    sub = path + ROM_PREFIX_LEN;
+  while (*sub == '/')
+    ++sub;
   if (strcmp(s_asset_root, "/cd") == 0)
-    snprintf(full, sizeof(full), "/rd/p64/%s",
-             (strncmp(path, P64_PREFIX, P64_PREFIX_LEN) == 0) ? path + P64_PREFIX_LEN : path);
+    snprintf(full, sizeof(full), "/rd/%s", sub);
   else
-    snprintf(full, sizeof(full), "/cd/p64/%s",
-             (strncmp(path, P64_PREFIX, P64_PREFIX_LEN) == 0) ? path + P64_PREFIX_LEN : path);
-  return load_file(full, size_out);
+    snprintf(full, sizeof(full), "/cd/%s", sub);
+  buf = load_file(full, size_out);
+  if (!buf)
+    printf("[p64] asset miss fallback %s\n", full);
+  return buf;
 }

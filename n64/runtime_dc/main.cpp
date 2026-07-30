@@ -27,7 +27,7 @@ KOS_INIT_FLAGS(INIT_DEFAULT);
 
 /* Set to 1 to force full soft-FB blit (slow; for debugging draw stubs). */
 #ifndef P64_DC_FULL_SOFT_PRESENT
-#define P64_DC_FULL_SOFT_PRESENT 0
+#define P64_DC_FULL_SOFT_PRESENT 1
 #endif
 
 static inline uint16_t rgba8_to_rgb565(uint8_t r, uint8_t g, uint8_t b)
@@ -42,27 +42,29 @@ static void show_solid(uint8_t r, uint8_t g, uint8_t b)
   vid_waitvbl();
 }
 
+static void draw_heartbeat_overlay(void)
+{
+  static unsigned tick = 0;
+  ++tick;
+  uint16_t* vram = (uint16_t*)vram_s;
+  if (!vram || !vid_mode) return;
+  const int vw = vid_mode->width;
+  const uint8_t pulse = (uint8_t)((tick * 8u) & 255u);
+  const uint16_t c = rgba8_to_rgb565(255, pulse, 0);
+  for (int y = 0; y < 16; y++) {
+    uint16_t* row = vram + y * vw;
+    for (int x = 0; x < 16; x++)
+      row[x] = c;
+  }
+}
+
 static void present_fast_clear_with_heartbeat(void)
 {
   unsigned char r = 51, g = 51, b = 51, a = 255;
   p64_pc_get_clear_color_rgba8(&r, &g, &b, &a);
   (void)a;
   vid_clear(r, g, b);
-
-  /* Pulsing 16x16 block so a “stuck grey” still shows the main loop is alive. */
-  static unsigned tick = 0;
-  ++tick;
-  uint16_t* vram = (uint16_t*)vram_s;
-  if (vram && vid_mode) {
-    const int vw = vid_mode->width;
-    const uint8_t pulse = (uint8_t)((tick * 8u) & 255u);
-    const uint16_t c = rgba8_to_rgb565(255, pulse, 0);
-    for (int y = 0; y < 16; y++) {
-      uint16_t* row = vram + y * vw;
-      for (int x = 0; x < 16; x++)
-        row[x] = c;
-    }
-  }
+  draw_heartbeat_overlay();
   vid_flip(-1);
 }
 
@@ -105,6 +107,7 @@ static void present_display_buffer_full(void)
     }
   }
 
+  draw_heartbeat_overlay();
   vid_flip(-1);
 }
 
@@ -161,7 +164,7 @@ int main(int argc, char** argv)
     vid_waitvbl();
 
     if (frame == 0)
-      printf("p64: present ok (fast clear; Tiny3D stubbed — expect scene clear color)\n");
+      printf("p64: present ok (soft FB blit; soft Tiny3D)\n");
     frame++;
   }
 

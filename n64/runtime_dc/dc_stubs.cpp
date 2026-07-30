@@ -75,6 +75,12 @@ void __asset_init_compression_lvl3(void) {}
 void* asset_load(const char* fn, int* sz) {
   unsigned long size = 0;
   void* p = p64_pc_asset_load(fn, &size);
+  if (p) {
+    extern void* p64_dc_maybe_decompress_asset(void* in, unsigned long in_size, unsigned long* out_size);
+    unsigned long out_sz = size;
+    p = p64_dc_maybe_decompress_asset(p, size, &out_sz);
+    size = out_sz;
+  }
   if (sz && p) *sz = (int)size;
   return p;
 }
@@ -318,6 +324,8 @@ void rdpq_set_z_image(const surface_t*) {}
 void rdpq_attach(const surface_t* color, const surface_t*) {
   s_pc_attached_color = color;
   s_pc_current_color_image = color;
+  extern void p64_dc_soft_set_color_target(const surface_t*);
+  p64_dc_soft_set_color_target(color);
 }
 void rdpq_detach_cb(void (*)(void*), void*) {}
 void rdpq_tex_multi_begin(void) {}
@@ -427,9 +435,16 @@ static uint32_t rspq_dummy_buf[64];
 extern "C" {
 volatile uint32_t* rspq_cur_pointer = rspq_dummy_buf;
 volatile uint32_t* rspq_cur_sentinel = rspq_dummy_buf + 63;
-/* rspq_block_begin is inline in rspq.h */
-rspq_block_t* rspq_block_end(void) { return nullptr; }
-void rspq_block_run(rspq_block_t*) {}
+/* rspq_block_begin is inline → rspq_block_begin_reuse */
+extern void p64_dc_soft_block_begin(void);
+extern rspq_block_t* p64_dc_soft_block_end(void);
+extern void p64_dc_soft_block_run(rspq_block_t*);
+void rspq_block_begin_reuse(rspq_block_t* reuse_block) {
+  (void)reuse_block;
+  p64_dc_soft_block_begin();
+}
+rspq_block_t* rspq_block_end(void) { return p64_dc_soft_block_end(); }
+void rspq_block_run(rspq_block_t* b) { p64_dc_soft_block_run(b); }
 void rspq_next_buffer(void) {}
 void rspq_flush(void) {}
 uint32_t rspq_overlay_register(rsp_ucode_t*) { return 0; }
@@ -667,16 +682,7 @@ void t3d_init(T3DInitParams) {}
 void t3d_destroy(void) {}
 void tpx_init(TPXInitParams) {}
 void tpx_close(void) {}
-T3DModel* t3d_model_load(const char*) { return nullptr; }
-void t3d_model_free(T3DModel*) {}
-void t3d_matrix_push_pos(int) {}
-void t3d_matrix_pop(int) {}
-T3DViewport* t3d_viewport_get(void) { return nullptr; }
-void t3d_viewport_calc_viewspace_pos(T3DViewport*, T3DVec3* out, const T3DVec3* pos) { (void)out; (void)pos; }
-void t3d_viewport_set_perspective(T3DViewport*, float, float, float, float) {}
-void t3d_viewport_set_view_matrix(T3DViewport*, const T3DMat4*) {}
-void t3d_viewport_attach(T3DViewport*) {}
-void t3d_mat4_look_at(T3DMat4* out, const T3DVec3*, const T3DVec3*, const T3DVec3*) { (void)out; }
+/* t3d_model_load / free / iter / draw_object / matrices / viewport: dc_soft3d.cpp */
 void t3d_fog_set_range(float, float) {}
 void t3d_screen_clear_depth(void) {}
 void t3d_screen_clear_color(color_t c) {
@@ -695,7 +701,6 @@ void t3d_screen_clear_color(color_t c) {
     }
   } else {
     const uint32_t packed = pc_pack_rgba(c.r, c.g, c.b, c.a);
-    /* Contiguous RGBA32: one fill; otherwise per-row. */
     if ((int)stride == w * 4) {
       uint32_t* p = (uint32_t*)base;
       for (int i = 0, n = w * h; i < n; i++) p[i] = packed;
@@ -712,17 +717,13 @@ void* t3d_skeleton_create_buffered(void) { return nullptr; }
 void t3d_skeleton_update(void*) {}
 void* t3d_skeleton_clone(void*) { return nullptr; }
 void* t3d_anim_create(void) { return nullptr; }
-bool t3d_model_iter_next(T3DModelIter* iter) { (void)iter; return false; }
 void t3d_model_draw_material(T3DMaterial* mat, T3DModelState* state) { (void)mat; (void)state; }
-void t3d_model_draw_object(const T3DObject* obj, const T3DMat4FP* boneMatrices) { (void)obj; (void)boneMatrices; }
 void t3d_anim_destroy(void*) {}
 void t3d_skeleton_destroy(void*) {}
 void t3d_state_set_vertex_fx(T3DVertexFX, int16_t, int16_t) {}
 void t3d_anim_update(void*, float) {}
 void t3d_skeleton_blend(void*, void*, void*, float) {}
-void t3d_mat4fp_from_srt(T3DMat4FP* mat, const float* scale, const float* rotQuat, const float* translate) { (void)mat; (void)scale; (void)rotQuat; (void)translate; }
 void t3d_segment_set(uint8_t, void*) {}
-void t3d_matrix_set(const T3DMat4FP* mat, bool doMultiply) { (void)mat; (void)doMultiply; }
 void t3d_metrics_fetch(T3DMetrics* data) { (void)data; }
 void t3d_light_set_directional(int, const uint8_t*, const T3DVec3*) {}
 void t3d_light_set_ambient(const uint8_t*) {}
@@ -900,7 +901,6 @@ void fm_quat_mul(fm_quat_t* out, const fm_quat_t* a, const fm_quat_t* b) {
 
 /* --- RSPQ block reuse / placeholders --- */
 extern "C" {
-void rspq_block_begin_reuse(rspq_block_t* reuse_block) { (void)reuse_block; }
 void rspq_block_set_placeholder(rspq_block_t* ph, rspq_block_t* ph_target) {
   (void)ph;
   (void)ph_target;
@@ -917,9 +917,6 @@ void xm64player_play(xm64player_t* player, int first_ch) { (void)player; (void)f
 void xm64player_open(xm64player_t* player, const char* path) { (void)player; (void)path; }
 void xm64player_close(xm64player_t* player) { (void)player; }
 void __debug_init_cpp(void) {}
-void t3d_viewport_set_ortho(T3DViewport* vp, float left, float right, float bottom, float top, float n, float f) {
-  (void)vp; (void)left; (void)right; (void)bottom; (void)top; (void)n; (void)f;
-}
 }
 void t3d_state_set_lighting_mode(enum T3DLightingMode mode) { (void)mode; }
 

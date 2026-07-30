@@ -36,17 +36,22 @@ namespace
   void recordWholeModel(T3DModel *model)
   {
     rspq_block_begin();
+#ifndef PLATFORM_DC
     P64::Renderer::MaterialState state{};
+#endif
 
     T3DModelIter it = t3d_model_iter_create(model, T3D_CHUNK_TYPE_OBJECT);
     while(t3d_model_iter_next(&it))
     {
-      //P64::Log::info("Object: %s", it.object->name);
+#ifndef PLATFORM_DC
       auto *mat = (P64::Renderer::Material*)it.object->material;
       assert(mat);
       mat->begin(state);
+#endif
       t3d_model_draw_object(it.object, nullptr);
+#ifndef PLATFORM_DC
       mat->end(state);
+#endif
     }
 
     model->userBlock = rspq_block_end();
@@ -107,6 +112,12 @@ namespace P64::Comp
 
     data->model = (T3DModel*)AssetManager::getByIndex(initData->assetIdx);
     assert(data->model != nullptr);
+#ifdef PLATFORM_DC
+    if (!data->model) {
+      printf("[p64] Model init: asset %u failed to load\n", (unsigned)initData->assetIdx);
+      return;
+    }
+#endif
     data->layerIdx = initData->layer;
     data->flags = initData->flags;
 
@@ -141,11 +152,15 @@ namespace P64::Comp
       while(t3d_model_iter_next(&it)) {
         if(it.object->userBlock)return; // already recorded the model
         rspq_block_begin();
+#ifndef PLATFORM_DC
           Renderer::MaterialState state{};
           auto *mat = (Renderer::Material*)it.object->material;
           mat->begin(state);
+#endif
           t3d_model_draw_object(it.object, nullptr);
+#ifndef PLATFORM_DC
           mat->end(state);
+#endif
 
         it.object->userBlock = rspq_block_end();
       }
