@@ -1,6 +1,10 @@
 /**
  * Dreamcast host: KallistiOS + software framebuffer present (RGB565 VRAM).
  * Engine compiled with PLATFORM_PC (+ PLATFORM_DC) reuses main_pc / swapChain_pc.
+ *
+ * Tiny3D/RSP are stubbed on DC, so the soft FB is usually just the scene clear
+ * color. Full RGBA8→RGB565 blit every frame is very expensive on SH-4 — use a
+ * fast solid present (+ heartbeat) until a real draw path exists.
  */
 #include "dc_platform.h"
 
@@ -21,12 +25,16 @@ extern "C" void p64_pc_get_clear_color_rgba8(unsigned char* r, unsigned char* g,
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
+/* Set to 1 to force full soft-FB blit (slow; for debugging draw stubs). */
+#ifndef P64_DC_FULL_SOFT_PRESENT
+#define P64_DC_FULL_SOFT_PRESENT 0
+#endif
+
 static inline uint16_t rgba8_to_rgb565(uint8_t r, uint8_t g, uint8_t b)
 {
   return (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
 }
 
-/* Multi-buffered KOS modes only show what you draw after vid_flip. */
 static void show_solid(uint8_t r, uint8_t g, uint8_t b)
 {
   vid_clear(r, g, b);
@@ -34,7 +42,31 @@ static void show_solid(uint8_t r, uint8_t g, uint8_t b)
   vid_waitvbl();
 }
 
-static void present_display_buffer(void)
+static void present_fast_clear_with_heartbeat(void)
+{
+  unsigned char r = 51, g = 51, b = 51, a = 255;
+  p64_pc_get_clear_color_rgba8(&r, &g, &b, &a);
+  (void)a;
+  vid_clear(r, g, b);
+
+  /* Pulsing 16x16 block so a “stuck grey” still shows the main loop is alive. */
+  static unsigned tick = 0;
+  ++tick;
+  uint16_t* vram = (uint16_t*)vram_s;
+  if (vram && vid_mode) {
+    const int vw = vid_mode->width;
+    const uint8_t pulse = (uint8_t)((tick * 8u) & 255u);
+    const uint16_t c = rgba8_to_rgb565(255, pulse, 0);
+    for (int y = 0; y < 16; y++) {
+      uint16_t* row = vram + y * vw;
+      for (int x = 0; x < 16; x++)
+        row[x] = c;
+    }
+  }
+  vid_flip(-1);
+}
+
+static void present_display_buffer_full(void)
 {
   unsigned char* buf = nullptr;
   int w = 0, h = 0, stride = 0;
@@ -47,15 +79,10 @@ static void present_display_buffer(void)
   if (vw <= 0 || vh <= 0) return;
 
   if (!buf || w <= 0 || h <= 0) {
-    unsigned char r = 20, g = 20, b = 40, a = 255;
-    p64_pc_get_clear_color_rgba8(&r, &g, &b, &a);
-    (void)a;
-    vid_clear(r, g, b);
-    vid_flip(-1);
+    present_fast_clear_with_heartbeat();
     return;
   }
 
-  /* Prefer 1:1 when video mode matches engine FB (DM_320x240). */
   if (w == vw && h == vh && stride == w * 4) {
     for (int y = 0; y < vh; y++) {
       const uint8_t* row = buf + (size_t)y * (size_t)stride;
@@ -86,7 +113,6 @@ int main(int argc, char** argv)
   (void)argc;
   (void)argv;
 
-  /* Match engine soft-FB size for a cheap 1:1 blit. */
   vid_set_mode(DM_320x240, PM_RGB565);
   show_solid(0, 180, 255); /* cyan = video OK */
 
@@ -110,7 +136,7 @@ int main(int argc, char** argv)
   unsigned frame = 0;
   for (;;) {
     if (frame == 0) {
-      show_solid(255, 255, 0); /* yellow = entering first frame (scene load) */
+      show_solid(255, 255, 0); /* yellow = first frame / scene load */
       printf("p64: first frame (scene construct)...\n");
     }
 
@@ -127,11 +153,15 @@ int main(int argc, char** argv)
       printf("p64: first frame done, presenting...\n");
     }
 
-    present_display_buffer();
+#if P64_DC_FULL_SOFT_PRESENT
+    present_display_buffer_full();
+#else
+    present_fast_clear_with_heartbeat();
+#endif
     vid_waitvbl();
 
     if (frame == 0)
-      printf("p64: present ok, entering loop\n");
+      printf("p64: present ok (fast clear; Tiny3D stubbed — expect scene clear color)\n");
     frame++;
   }
 

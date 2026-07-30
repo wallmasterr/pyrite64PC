@@ -76,7 +76,7 @@ GAME_OBJS   := $(foreach s,$(GAME_CPP),$(call pathobj,$(s)))
 OBJS := $(ENGINE_OBJS) $(RT_OBJS_CPP) $(RT_OBJS_C) $(GAME_OBJS)
 
 COMMON_FLAGS := \
-  -DPLATFORM_PC -DPLATFORM_DC -DNDEBUG \
+  -DPLATFORM_PC -DPLATFORM_DC -DNDEBUG -O2 \
   -DP64_PROJECT_PATH=\"$(P64_PROJECT_PATH)\" \
   -I$(RT) -I$(RT)/include \
   -I$(ENGINE)/include -I$(ENGINE)/src \

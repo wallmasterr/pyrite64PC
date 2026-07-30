@@ -25,6 +25,7 @@
 #include <cstring>
 
 #include "pc_platform.h"
+#include "lib/assetEndian.h"
 
 extern "C" void p64_pc_trace(const char* step);
 
@@ -72,6 +73,12 @@ void p64_engine_init(void)
     if (tmp) {
       std::memcpy(&s_projectConf, tmp, sizeof(ProjectConf));
       free(tmp);
+#ifdef PLATFORM_PC
+      s_projectConf.sceneIdOnBoot = P64::AssetEndian::be32(s_projectConf.sceneIdOnBoot);
+      s_projectConf.sceneIdOnReset = P64::AssetEndian::be32(s_projectConf.sceneIdOnReset);
+      for (auto& font : s_projectConf.autoLoadFonts)
+        font = P64::AssetEndian::be16(font);
+#endif
     } else {
       /* Matches src/project/project.h default when conf is missing (avoids scene 0 / s0000 vs editor scenes starting at 1). */
       p64_pc_trace("conf_missing_scene_defaults_1");

@@ -5,6 +5,7 @@
 #ifdef PLATFORM_PC
 #include <pc_compat.h>
 #include <cstdlib>
+#include "lib/assetEndian.h"
 #endif
 #include "assets/assetManager.h"
 
@@ -115,7 +116,7 @@ void P64::AssetManager::init() {
   s_assetBlob = asset_load("rom:/p64/a", &blobSize);
   uint32_t count = 0;
   if (s_assetBlob && blobSize >= 4) {
-    count = *(const uint32_t*)s_assetBlob;
+    count = AssetEndian::be32(*(const uint32_t*)s_assetBlob);
     /* Avoid OOB read: table needs at least 4 + count*8 bytes. */
     if (count > 0 && (uint32_t)blobSize < 4 + count * 8u)
       count = 0;
@@ -132,8 +133,8 @@ void P64::AssetManager::init() {
     if (s_assetBlob && count > 0) {
       const char* base = (const char*)s_assetBlob;
       for (uint32_t i = 0; i < count; ++i) {
-        uint32_t pathOffset = *(const uint32_t*)(base + 4 + i * 8);
-        uint32_t packed = *(const uint32_t*)(base + 4 + i * 8 + 4);
+        uint32_t pathOffset = AssetEndian::be32(*(const uint32_t*)(base + 4 + i * 8));
+        uint32_t packed = AssetEndian::be32(*(const uint32_t*)(base + 4 + i * 8 + 4));
         assetTable->entries[i].path = base + pathOffset;
         assetTable->entries[i].packed_ = packed;
         assetTable->entries[i].data_ = nullptr;

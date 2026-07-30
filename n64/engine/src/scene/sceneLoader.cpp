@@ -11,7 +11,10 @@
 #include "scene/scene.h"
 #include "lib/math.h"
 #include "lib/logger.h"
+#include "lib/assetEndian.h"
 #include "scene/componentTable.h"
+#include "scene/components/camera.h"
+#include "scene/components/model.h"
 
 #ifdef PLATFORM_PC
 #include "pc_platform.h"
@@ -69,6 +72,111 @@ namespace {
     scenePath[len] = '\0';
     return r;
   }
+
+  void nativeSceneConf(P64::SceneConf& conf)
+  {
+#ifdef PLATFORM_PC
+    using P64::AssetEndian::be16;
+    using P64::AssetEndian::be32;
+    using P64::AssetEndian::be_f32;
+    using P64::AssetEndian::be_vec3;
+
+    conf.screenWidth = be16(conf.screenWidth);
+    conf.screenHeight = be16(conf.screenHeight);
+    conf.flags = be32(conf.flags);
+    conf.objectCount = be32(conf.objectCount);
+    conf.audioFreq = be16(conf.audioFreq);
+    conf.physicsTickRate = be16(conf.physicsTickRate);
+    be_vec3(conf.gravity);
+    conf.visualUnitsPerMeter = be_f32(conf.visualUnitsPerMeter);
+
+    const uint32_t layers = (uint32_t)conf.layerSetup.layerCount3D
+      + conf.layerSetup.layerCountPtx
+      + conf.layerSetup.layerCount2D;
+    const uint32_t n = layers < 16u ? layers : 16u;
+    for (uint32_t i = 0; i < n; ++i) {
+      auto& c = conf.layerSetup.layerConf[i];
+      c.flags = be32(c.flags);
+      c.blender = be32(c.blender);
+      c.fogMin = be_f32(c.fogMin);
+      c.fogMax = be_f32(c.fogMax);
+    }
+
+    /* Guard against corrupt / pre-byteswap dimensions exhausting RAM. */
+    if (conf.screenWidth == 0 || conf.screenWidth > 640)
+      conf.screenWidth = 320;
+    if (conf.screenHeight == 0 || conf.screenHeight > 480)
+      conf.screenHeight = 240;
+    if (conf.objectCount > 4096u)
+      conf.objectCount = 0;
+#else
+    (void)conf;
+#endif
+  }
+
+  ObjectEntry nativeObjectEntry(const ObjectEntry& in)
+  {
+    ObjectEntry e = in;
+#ifdef PLATFORM_PC
+    using P64::AssetEndian::be16;
+    using P64::AssetEndian::be32;
+    using P64::AssetEndian::be_vec3;
+    e.flags = be16(e.flags);
+    e.id = be16(e.id);
+    e.group = be16(e.group);
+    be_vec3(e.pos);
+    be_vec3(e.scale);
+    e.packedRot = be32(e.packedRot);
+#endif
+    return e;
+  }
+
+  void nativeCameraInitData(P64::Comp::Camera::InitData* d)
+  {
+#ifdef PLATFORM_PC
+    if (!d) return;
+    using P64::AssetEndian::be32i;
+    using P64::AssetEndian::be_f32;
+    d->vpOffset[0] = be32i(d->vpOffset[0]);
+    d->vpOffset[1] = be32i(d->vpOffset[1]);
+    d->vpSize[0] = be32i(d->vpSize[0]);
+    d->vpSize[1] = be32i(d->vpSize[1]);
+    d->fov = be_f32(d->fov);
+    d->near = be_f32(d->near);
+    d->far = be_f32(d->far);
+    d->aspectRatio = be_f32(d->aspectRatio);
+    d->orthoSize = be_f32(d->orthoSize);
+#else
+    (void)d;
+#endif
+  }
+
+  void nativeCompInitData(uint8_t compId, uint8_t* initData)
+  {
+#ifdef PLATFORM_PC
+    if (!initData) return;
+    if (compId == P64::Comp::Camera::ID) {
+      nativeCameraInitData(reinterpret_cast<P64::Comp::Camera::InitData*>(initData));
+    } else if (compId == P64::Comp::Model::ID) {
+      using P64::AssetEndian::be16;
+      using P64::AssetEndian::be32;
+      uint16_t* u16 = reinterpret_cast<uint16_t*>(initData);
+      u16[0] = be16(u16[0]); /* assetIdx */
+      const uint8_t meshIdxCount = initData[4];
+      uintptr_t matAddr = (uintptr_t)(initData + 5 + meshIdxCount);
+      matAddr = (matAddr + 3u) & ~uintptr_t{3};
+      if (matAddr) {
+        uint32_t* mat = reinterpret_cast<uint32_t*>(matAddr);
+        mat[0] = be32(mat[0]); /* dataSize */
+        uint16_t* setMask = reinterpret_cast<uint16_t*>(mat + 1);
+        *setMask = be16(*setMask);
+      }
+    }
+#else
+    (void)compId;
+    (void)initData;
+#endif
+  }
 }
 
 void P64::Scene::loadSceneConfig()
@@ -111,6 +219,7 @@ void P64::Scene::loadSceneConfig()
     std::memcpy(static_cast<void*>(&conf), raw, ncopy);
   }
   free(raw);
+  nativeSceneConf(conf);
 
   const uint32_t layerCount = (uint32_t)conf.layerSetup.layerCount3D + conf.layerSetup.layerCountPtx + conf.layerSetup.layerCount2D;
   if (layerCount == 0u) {
@@ -147,7 +256,8 @@ P64::Object* P64::Scene::loadObject(uint8_t* &objFile, std::function<void(Object
   if (!blob_has(objFile, sizeof(ObjectEntry), fileEnd))
     return fail();
 
-  ObjectEntry* objEntry = (ObjectEntry*)objFile;
+  const ObjectEntry objEntryStored = nativeObjectEntry(*(const ObjectEntry*)objFile);
+  const ObjectEntry* objEntry = &objEntryStored;
 
   // pre-scan components to get total allocation size
   uint32_t allocSize = sizeof(Object);
@@ -171,11 +281,14 @@ P64::Object* P64::Scene::loadObject(uint8_t* &objFile, std::function<void(Object
     if (!blob_has(ptrIn, argSize, fileEnd))
       return fail();
 
-    assertf(compId < COMP_TABLE_SIZE, "Invalid component ID %d!", compId);
+    if (compId >= COMP_TABLE_SIZE)
+      return fail();
     const auto &compDef = COMP_TABLE[compId];
-    assertf(compDef.getAllocSize != nullptr, "Component %d unknown!", compId);
+    if (!compDef.getAllocSize)
+      return fail();
     if (!blob_has(ptrIn + 4, argSize - 4u, fileEnd))
       return fail();
+    nativeCompInitData(compId, ptrIn + 4);
     compDataSize += Math::alignUp(compDef.getAllocSize(ptrIn + 4), DATA_ALIGN);
     allocSize += sizeof(Object::CompRef);
 

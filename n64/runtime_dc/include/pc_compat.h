@@ -51,5 +51,8 @@ extern "C" void* sys_hw_memset(void* ptr, uint8_t value, size_t len);
 extern "C" void data_cache_hit_writeback(volatile const void* addr, unsigned long size);
 extern "C" void data_cache_hit_writeback_invalidate(volatile void* addr, unsigned long size);
 
+/* newlib heap size query (scene.cpp mem tracking); provided by KallistiOS newlib on DC. */
+extern "C" size_t malloc_usable_size(void* ptr);
+
 #endif /* PLATFORM_PC */
 #endif /* PC_COMPAT_H */

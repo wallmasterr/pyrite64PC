@@ -681,19 +681,29 @@ void t3d_fog_set_range(float, float) {}
 void t3d_screen_clear_depth(void) {}
 void t3d_screen_clear_color(color_t c) {
   if (!s_pc_attached_color || !s_pc_attached_color->buffer) return;
-  uint32_t packed = pc_pack_rgba(c.r, c.g, c.b, c.a);
+  const int w = (int)s_pc_attached_color->width;
+  const int h = (int)s_pc_attached_color->height;
+  if (w <= 0 || h <= 0) return;
   tex_format_t fmt = surface_get_format(s_pc_attached_color);
-  size_t stride = (size_t)s_pc_attached_color->stride;
-  size_t h = s_pc_attached_color->height;
   uint8_t* base = (uint8_t*)s_pc_attached_color->buffer;
-  for (size_t y = 0; y < h; y++) {
-    if (fmt == FMT_RGBA16) {
-      uint16_t* row16 = (uint16_t*)(base + y * stride);
-      uint16_t v16 = pc_rgba32_to_rgba16(packed);
-      for (int x = 0; x < (int)s_pc_attached_color->width; x++) row16[x] = v16;
+  const size_t stride = (size_t)s_pc_attached_color->stride;
+  if (fmt == FMT_RGBA16) {
+    const uint16_t v16 = pc_rgba32_to_rgba16(pc_pack_rgba(c.r, c.g, c.b, c.a));
+    for (int y = 0; y < h; y++) {
+      uint16_t* row16 = (uint16_t*)(base + (size_t)y * stride);
+      for (int x = 0; x < w; x++) row16[x] = v16;
+    }
+  } else {
+    const uint32_t packed = pc_pack_rgba(c.r, c.g, c.b, c.a);
+    /* Contiguous RGBA32: one fill; otherwise per-row. */
+    if ((int)stride == w * 4) {
+      uint32_t* p = (uint32_t*)base;
+      for (int i = 0, n = w * h; i < n; i++) p[i] = packed;
     } else {
-      uint32_t* row32 = (uint32_t*)(base + y * stride);
-      for (int x = 0; x < (int)s_pc_attached_color->width; x++) row32[x] = packed;
+      for (int y = 0; y < h; y++) {
+        uint32_t* row32 = (uint32_t*)(base + (size_t)y * stride);
+        for (int x = 0; x < w; x++) row32[x] = packed;
+      }
     }
   }
 }
