@@ -802,8 +802,36 @@ void surface_free(surface_t* surf) {
   surf->stride = 0;
   surf->buffer = nullptr;
 }
-sprite_t* sprite_load(const char*) { return nullptr; }
-void sprite_free(sprite_t*) {}
+sprite_t* sprite_load(const char* fn) {
+  int sz = 0;
+  void* buf = asset_load(fn, &sz);
+  if (!buf || sz < (int)sizeof(sprite_t)) {
+    free(buf);
+    printf("[p64] sprite_load fail: %s\n", fn ? fn : "?");
+    return nullptr;
+  }
+  sprite_t* s = (sprite_t*)buf;
+  /* Sprite assets are big-endian (N64). */
+  s->width = __builtin_bswap16(s->width);
+  s->height = __builtin_bswap16(s->height);
+  s->flags |= SPRITE_FLAGS_OWNEDBUFFER;
+  printf("[p64] sprite %s %ux%u fmt=%u\n", fn ? fn : "?",
+         (unsigned)s->width, (unsigned)s->height, (unsigned)(s->flags & SPRITE_FLAGS_TEXFORMAT));
+  return s;
+}
+void sprite_free(sprite_t* s) {
+  if (!s) return;
+  if (s->flags & SPRITE_FLAGS_OWNEDBUFFER)
+    free(s);
+}
+surface_t sprite_get_pixels(sprite_t* sprite) {
+  surface_t out{};
+  if (!sprite) return out;
+  void* pixels = sprite->data;
+  if (sprite->flags & SPRITE_FLAGS_NODATA)
+    return out;
+  return surface_make_linear(pixels, sprite_get_format(sprite), sprite->width, sprite->height);
+}
 }
 
 /* --- RDPQ (screenFade, fonts): triangle + fill format + texture rect scaled --- */

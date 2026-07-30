@@ -13,6 +13,7 @@
 #include <libdragon.h>
 #include <t3d/t3d.h>
 #include <t3d/t3dmodel.h>
+#include "assets/assetManager.h"
 
 extern "C" {
   const surface_t* p64_dc_soft_get_color_target(void);
@@ -158,13 +159,67 @@ void put_pixel(uint8_t* base, int stride, int w, int h, int x, int y, uint32_t r
   row[x] = rgba;
 }
 
-void fill_tri(uint8_t* base, int stride, int w, int h,
-              float x0, float y0, float x1, float y1, float x2, float y2, uint32_t rgba)
+struct SoftTex {
+  const uint8_t* pixels = nullptr;
+  tex_format_t fmt = FMT_NONE;
+  int width = 0, height = 0, stride = 0;
+  bool ok = false;
+};
+
+inline uint16_t be16u(uint16_t v) { return __builtin_bswap16(v); }
+
+uint32_t sample_tex(const SoftTex& tex, float u, float v)
 {
-  /* Sort by y */
-  if (y1 < y0) { std::swap(y0, y1); std::swap(x0, x1); }
-  if (y2 < y0) { std::swap(y0, y2); std::swap(x0, x2); }
-  if (y2 < y1) { std::swap(y1, y2); std::swap(x1, x2); }
+  if (!tex.ok || !tex.pixels || tex.width <= 0 || tex.height <= 0)
+    return 0xFFFFFFFFu;
+  /* Wrap like RDP clamp/wrap for crate UVs spanning ~0..44 */
+  int s = (int)std::floor(u);
+  int t = (int)std::floor(v);
+  s %= tex.width; if (s < 0) s += tex.width;
+  t %= tex.height; if (t < 0) t += tex.height;
+
+  const uint8_t* row = tex.pixels + (size_t)t * (size_t)tex.stride;
+  switch (tex.fmt) {
+    case FMT_RGBA16: {
+      const uint16_t px = be16u(((const uint16_t*)row)[s]);
+      const uint8_t r = (uint8_t)(((px >> 11) & 0x1F) * 255 / 31);
+      const uint8_t g = (uint8_t)(((px >> 6) & 0x1F) * 255 / 31);
+      const uint8_t b = (uint8_t)(((px >> 1) & 0x1F) * 255 / 31);
+      const uint8_t a = (px & 1) ? 255 : 0;
+      return (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16) | ((uint32_t)a << 24);
+    }
+    case FMT_RGBA32: {
+      const uint8_t* p = row + (size_t)s * 4u;
+      /* BE RGBA8 in file */
+      return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+    }
+    case FMT_I8: {
+      const uint8_t i = row[s];
+      return (uint32_t)i | ((uint32_t)i << 8) | ((uint32_t)i << 16) | 0xFF000000u;
+    }
+    default:
+      return 0xFF808080u;
+  }
+}
+
+void fill_tri_tex(uint8_t* base, int stride, int w, int h,
+                  float x0, float y0, float u0, float v0,
+                  float x1, float y1, float u1, float v1,
+                  float x2, float y2, float u2, float v2,
+                  const SoftTex* tex, uint32_t flatFallback)
+{
+  /* Sort by y, carrying UVs */
+  auto swap6 = [](float& ax, float& ay, float& au, float& av,
+                  float& bx, float& by, float& bu, float& bv) {
+    std::swap(ax, bx); std::swap(ay, by); std::swap(au, bu); std::swap(av, bv);
+  };
+  if (y1 < y0) swap6(x0, y0, u0, v0, x1, y1, u1, v1);
+  if (y2 < y0) swap6(x0, y0, u0, v0, x2, y2, u2, v2);
+  if (y2 < y1) swap6(x1, y1, u1, v1, x2, y2, u2, v2);
+
+  const float area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+  if (std::fabs(area) < 0.01f) return;
+  const float invA = 1.f / area;
 
   auto edge = [](float y0, float x0, float y1, float x1, float y) -> float {
     if (std::fabs(y1 - y0) < 1e-6f) return x0;
@@ -186,9 +241,51 @@ void fill_tri(uint8_t* base, int stride, int w, int h,
     if (xb < xa) std::swap(xa, xb);
     int x0i = (int)std::ceil(xa);
     int x1i = (int)std::floor(xb);
-    for (int x = x0i; x <= x1i; x++)
-      put_pixel(base, stride, w, h, x, y, rgba);
+    for (int x = x0i; x <= x1i; x++) {
+      if (x < 0 || x >= w) continue;
+      /* Barycentric w.r.t original order after sort — use screen barycentrics */
+      const float px = (float)x + 0.5f, py = (float)y + 0.5f;
+      const float w0 = ((x1 - px) * (y2 - py) - (x2 - px) * (y1 - py)) * invA;
+      const float w1 = ((x2 - px) * (y0 - py) - (x0 - px) * (y2 - py)) * invA;
+      const float w2 = 1.f - w0 - w1;
+      uint32_t col = flatFallback;
+      if (tex && tex->ok) {
+        const float u = w0 * u0 + w1 * u1 + w2 * u2;
+        const float v = w0 * v0 + w1 * v1 + w2 * v2;
+        col = sample_tex(*tex, u, v);
+        /* Skip fully transparent texels */
+        if ((col >> 24) == 0) continue;
+      }
+      put_pixel(base, stride, w, h, x, y, col);
+    }
   }
+}
+
+SoftTex soft_tex_from_sprite(sprite_t* spr)
+{
+  SoftTex out{};
+  if (!spr || spr->width == 0 || spr->height == 0) return out;
+  out.pixels = (const uint8_t*)spr->data;
+  out.fmt = sprite_get_format(spr);
+  out.width = (int)spr->width;
+  out.height = (int)spr->height;
+  out.stride = (int)TEX_FORMAT_PIX2BYTES(out.fmt, out.width);
+  out.ok = out.pixels && out.stride > 0 &&
+           (out.fmt == FMT_RGBA16 || out.fmt == FMT_RGBA32 || out.fmt == FMT_I8);
+  return out;
+}
+
+SoftTex soft_tex_from_material(void* matPtr)
+{
+  SoftTex out{};
+  if (!matPtr) return out;
+  const uint8_t* m = (const uint8_t*)matPtr;
+  const uint32_t flags = be32(*(const uint32_t*)m);
+  constexpr uint32_t FLAG_TEX0 = 1u << 8;
+  if (!(flags & FLAG_TEX0)) return out;
+  const uint16_t texIdx = be16(*(const uint16_t*)(m + 8));
+  sprite_t* spr = (sprite_t*)P64::AssetManager::getByIndex(texIdx);
+  return soft_tex_from_sprite(spr);
 }
 
 uint32_t rgba_be_to_host(uint32_t be)
@@ -216,13 +313,14 @@ void soft_draw_object(T3DObject* obj)
   const int stride = (int)s_color->stride;
   if (w <= 0 || h <= 0) return;
 
+  const SoftTex tex = soft_tex_from_material(obj->material);
   const Mat4 mvp = mat_mul(s_vp_attached->proj, mat_mul(s_vp_attached->view, s_model));
   const float ox = (float)s_vp_attached->ox;
   const float oy = (float)s_vp_attached->oy;
   const float vw = (float)s_vp_attached->w;
   const float vh = (float)s_vp_attached->h;
 
-  auto project = [&](T3DVertPacked* vert, int vi, float& sx, float& sy, uint32_t& col) -> bool {
+  auto project = [&](T3DVertPacked* vert, int vi, float& sx, float& sy, float& su, float& sv, uint32_t& col) -> bool {
     int16_t* p = t3d_vertbuffer_get_pos(vert, vi);
     float x = (float)p[0], y = (float)p[1], z = (float)p[2];
     float oxw, oyw, ozw, oww;
@@ -233,23 +331,24 @@ void soft_draw_object(T3DObject* obj)
     const float ndcY = oyw * inv;
     sx = ox + (ndcX * 0.5f + 0.5f) * vw;
     sy = oy + (1.f - (ndcY * 0.5f + 0.5f)) * vh;
+    int16_t* st = t3d_vertbuffer_get_uv(vert, vi);
+    su = (float)st[0] / 32.f;
+    sv = (float)st[1] / 32.f;
     col = rgba_be_to_host(*t3d_vertbuffer_get_color(vert, vi));
-    /* Fallback if alpha/color collapsed to black with 0 alpha — still show something */
     if ((col & 0x00FFFFFFu) == 0)
-      col = 0xFF808080u;
+      col = 0xFFFFFFFFu;
     return true;
   };
 
   auto draw_tri = [&](T3DVertPacked* vert, int i0, int i1, int i2) {
-    float x0, y0, x1, y1, x2, y2;
+    float x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2;
     uint32_t c0, c1, c2;
-    if (!project(vert, i0, x0, y0, c0)) return;
-    if (!project(vert, i1, x1, y1, c1)) return;
-    if (!project(vert, i2, x2, y2, c2)) return;
-    const float area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
-    if (std::fabs(area) < 0.01f) return; /* degenerate */
-    /* No back-face cull on soft path — strip winding alternates and cameras vary. */
-    fill_tri(base, stride, w, h, x0, y0, x1, y1, x2, y2, c0);
+    if (!project(vert, i0, x0, y0, u0, v0, c0)) return;
+    if (!project(vert, i1, x1, y1, u1, v1, c1)) return;
+    if (!project(vert, i2, x2, y2, u2, v2, c2)) return;
+    fill_tri_tex(base, stride, w, h,
+                 x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2,
+                 tex.ok ? &tex : nullptr, c0);
   };
 
   for (uint16_t pi = 0; pi < obj->numParts; pi++) {
