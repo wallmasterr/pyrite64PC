@@ -145,6 +145,31 @@ int s_stack_top = 0;
 Mat4 s_model = mat_identity();
 
 const surface_t* s_color = nullptr;
+float* s_depth = nullptr;
+int s_depth_w = 0;
+int s_depth_h = 0;
+
+void soft_depth_ensure(int w, int h)
+{
+  if (w <= 0 || h <= 0) return;
+  if (s_depth && s_depth_w == w && s_depth_h == h) return;
+  free(s_depth);
+  s_depth = (float*)malloc((size_t)w * (size_t)h * sizeof(float));
+  s_depth_w = w;
+  s_depth_h = h;
+}
+
+void soft_depth_clear(void)
+{
+  if (!s_color || !s_color->buffer) return;
+  const int w = (int)s_color->width;
+  const int h = (int)s_color->height;
+  soft_depth_ensure(w, h);
+  if (!s_depth) return;
+  const int n = w * h;
+  for (int i = 0; i < n; i++)
+    s_depth[i] = 1.f; /* far NDC z */
+}
 
 struct SoftBlock {
   T3DObject* objs[kBlockCmdMax];
@@ -203,19 +228,20 @@ uint32_t sample_tex(const SoftTex& tex, float u, float v)
 }
 
 void fill_tri_tex(uint8_t* base, int stride, int w, int h,
-                  float x0, float y0, float u0, float v0,
-                  float x1, float y1, float u1, float v1,
-                  float x2, float y2, float u2, float v2,
+                  float x0, float y0, float z0, float u0, float v0,
+                  float x1, float y1, float z1, float u1, float v1,
+                  float x2, float y2, float z2, float u2, float v2,
                   const SoftTex* tex, uint32_t flatFallback)
 {
-  /* Sort by y, carrying UVs */
-  auto swap6 = [](float& ax, float& ay, float& au, float& av,
-                  float& bx, float& by, float& bu, float& bv) {
-    std::swap(ax, bx); std::swap(ay, by); std::swap(au, bu); std::swap(av, bv);
+  /* Sort by y, carrying depth + UVs */
+  auto swap8 = [](float& ax, float& ay, float& az, float& au, float& av,
+                  float& bx, float& by, float& bz, float& bu, float& bv) {
+    std::swap(ax, bx); std::swap(ay, by); std::swap(az, bz);
+    std::swap(au, bu); std::swap(av, bv);
   };
-  if (y1 < y0) swap6(x0, y0, u0, v0, x1, y1, u1, v1);
-  if (y2 < y0) swap6(x0, y0, u0, v0, x2, y2, u2, v2);
-  if (y2 < y1) swap6(x1, y1, u1, v1, x2, y2, u2, v2);
+  if (y1 < y0) swap8(x0, y0, z0, u0, v0, x1, y1, z1, u1, v1);
+  if (y2 < y0) swap8(x0, y0, z0, u0, v0, x2, y2, z2, u2, v2);
+  if (y2 < y1) swap8(x1, y1, z1, u1, v1, x2, y2, z2, u2, v2);
 
   const float area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
   if (std::fabs(area) < 0.01f) return;
@@ -225,6 +251,9 @@ void fill_tri_tex(uint8_t* base, int stride, int w, int h,
     if (std::fabs(y1 - y0) < 1e-6f) return x0;
     return x0 + (x1 - x0) * ((y - y0) / (y1 - y0));
   };
+
+  soft_depth_ensure(w, h);
+  float* depth = s_depth;
 
   const int yStart = (int)std::ceil(y0);
   const int yEnd = (int)std::floor(y2);
@@ -243,17 +272,21 @@ void fill_tri_tex(uint8_t* base, int stride, int w, int h,
     int x1i = (int)std::floor(xb);
     for (int x = x0i; x <= x1i; x++) {
       if (x < 0 || x >= w) continue;
-      /* Barycentric w.r.t original order after sort — use screen barycentrics */
       const float px = (float)x + 0.5f, py = (float)y + 0.5f;
-      const float w0 = ((x1 - px) * (y2 - py) - (x2 - px) * (y1 - py)) * invA;
-      const float w1 = ((x2 - px) * (y0 - py) - (x0 - px) * (y2 - py)) * invA;
-      const float w2 = 1.f - w0 - w1;
+      const float bw0 = ((x1 - px) * (y2 - py) - (x2 - px) * (y1 - py)) * invA;
+      const float bw1 = ((x2 - px) * (y0 - py) - (x0 - px) * (y2 - py)) * invA;
+      const float bw2 = 1.f - bw0 - bw1;
+      const float z = bw0 * z0 + bw1 * z1 + bw2 * z2;
+      if (depth) {
+        float& dz = depth[y * w + x];
+        if (z >= dz) continue; /* farther or equal — keep existing */
+        dz = z;
+      }
       uint32_t col = flatFallback;
       if (tex && tex->ok) {
-        const float u = w0 * u0 + w1 * u1 + w2 * u2;
-        const float v = w0 * v0 + w1 * v1 + w2 * v2;
+        const float u = bw0 * u0 + bw1 * u1 + bw2 * u2;
+        const float v = bw0 * v0 + bw1 * v1 + bw2 * v2;
         col = sample_tex(*tex, u, v);
-        /* Skip fully transparent texels */
         if ((col >> 24) == 0) continue;
       }
       put_pixel(base, stride, w, h, x, y, col);
@@ -320,7 +353,8 @@ void soft_draw_object(T3DObject* obj)
   const float vw = (float)s_vp_attached->w;
   const float vh = (float)s_vp_attached->h;
 
-  auto project = [&](T3DVertPacked* vert, int vi, float& sx, float& sy, float& su, float& sv, uint32_t& col) -> bool {
+  auto project = [&](T3DVertPacked* vert, int vi, float& sx, float& sy, float& sz,
+                     float& su, float& sv, uint32_t& col) -> bool {
     int16_t* p = t3d_vertbuffer_get_pos(vert, vi);
     float x = (float)p[0], y = (float)p[1], z = (float)p[2];
     float oxw, oyw, ozw, oww;
@@ -331,6 +365,7 @@ void soft_draw_object(T3DObject* obj)
     const float ndcY = oyw * inv;
     sx = ox + (ndcX * 0.5f + 0.5f) * vw;
     sy = oy + (1.f - (ndcY * 0.5f + 0.5f)) * vh;
+    sz = ozw * inv; /* NDC z — closer is smaller with our proj */
     int16_t* st = t3d_vertbuffer_get_uv(vert, vi);
     su = (float)st[0] / 32.f;
     sv = (float)st[1] / 32.f;
@@ -341,13 +376,13 @@ void soft_draw_object(T3DObject* obj)
   };
 
   auto draw_tri = [&](T3DVertPacked* vert, int i0, int i1, int i2) {
-    float x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2;
+    float x0, y0, z0, u0, v0, x1, y1, z1, u1, v1, x2, y2, z2, u2, v2;
     uint32_t c0, c1, c2;
-    if (!project(vert, i0, x0, y0, u0, v0, c0)) return;
-    if (!project(vert, i1, x1, y1, u1, v1, c1)) return;
-    if (!project(vert, i2, x2, y2, u2, v2, c2)) return;
+    if (!project(vert, i0, x0, y0, z0, u0, v0, c0)) return;
+    if (!project(vert, i1, x1, y1, z1, u1, v1, c1)) return;
+    if (!project(vert, i2, x2, y2, z2, u2, v2, c2)) return;
     fill_tri_tex(base, stride, w, h,
-                 x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2,
+                 x0, y0, z0, u0, v0, x1, y1, z1, u1, v1, x2, y2, z2, u2, v2,
                  tex.ok ? &tex : nullptr, c0);
   };
 
@@ -435,6 +470,8 @@ extern "C" {
 
 void p64_dc_soft_set_color_target(const surface_t* surf) { s_color = surf; }
 const surface_t* p64_dc_soft_get_color_target(void) { return s_color; }
+
+void p64_dc_soft_clear_depth(void) { soft_depth_clear(); }
 
 T3DModel* t3d_model_load(const char* path)
 {

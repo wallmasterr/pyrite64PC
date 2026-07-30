@@ -684,7 +684,10 @@ void tpx_init(TPXInitParams) {}
 void tpx_close(void) {}
 /* t3d_model_load / free / iter / draw_object / matrices / viewport: dc_soft3d.cpp */
 void t3d_fog_set_range(float, float) {}
-void t3d_screen_clear_depth(void) {}
+void t3d_screen_clear_depth(void) {
+  extern void p64_dc_soft_clear_depth(void);
+  p64_dc_soft_clear_depth();
+}
 void t3d_screen_clear_color(color_t c) {
   if (!s_pc_attached_color || !s_pc_attached_color->buffer) return;
   const int w = (int)s_pc_attached_color->width;
