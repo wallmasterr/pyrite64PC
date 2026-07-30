@@ -13,6 +13,7 @@
 #include <libdragon.h>
 #include <t3d/t3d.h>
 #include <t3d/t3dmodel.h>
+#include <t3d/t3dskeleton.h>
 #include "assets/assetManager.h"
 
 extern "C" {
@@ -28,6 +29,15 @@ constexpr int kBlockCmdMax = 64;
 inline uint16_t be16(uint16_t v) { return __builtin_bswap16(v); }
 inline uint32_t be32(uint32_t v) { return __builtin_bswap32(v); }
 inline int16_t be16s(int16_t v) { return (int16_t)be16((uint16_t)v); }
+inline float be_f32(float v)
+{
+  uint32_t u;
+  std::memcpy(&u, &v, sizeof(u));
+  u = be32(u);
+  float out;
+  std::memcpy(&out, &u, sizeof(out));
+  return out;
+}
 
 struct Mat4 {
   float m[4][4];
@@ -143,6 +153,20 @@ SoftViewport* s_vp_attached = &s_vp;
 Mat4 s_stack[kMatStackMax];
 int s_stack_top = 0;
 Mat4 s_model = mat_identity();
+
+/* Active skeleton bone matrices (model space), set before rspq_block_run. */
+constexpr int kMaxBones = 128;
+constexpr int kVertCache = 70;
+Mat4 s_bones[kMaxBones];
+int s_bone_count = 0;
+bool s_bones_valid = false;
+
+struct SoftCacheVert {
+  float sx, sy, sz, u, v;
+  uint32_t col;
+  bool ok;
+};
+SoftCacheVert s_vcache[kVertCache];
 
 const surface_t* s_color = nullptr;
 float* s_depth = nullptr;
@@ -347,62 +371,79 @@ void soft_draw_object(T3DObject* obj)
   if (w <= 0 || h <= 0) return;
 
   const SoftTex tex = soft_tex_from_material(obj->material);
-  const Mat4 mvp = mat_mul(s_vp_attached->proj, mat_mul(s_vp_attached->view, s_model));
   const float ox = (float)s_vp_attached->ox;
   const float oy = (float)s_vp_attached->oy;
   const float vw = (float)s_vp_attached->w;
   const float vh = (float)s_vp_attached->h;
 
-  auto project = [&](T3DVertPacked* vert, int vi, float& sx, float& sy, float& sz,
-                     float& su, float& sv, uint32_t& col) -> bool {
-    int16_t* p = t3d_vertbuffer_get_pos(vert, vi);
+  auto project_to_cache = [&](const Mat4& mvp, T3DVertPacked* vert, int localVi, int dest) {
+    if (dest < 0 || dest >= kVertCache) return;
+    SoftCacheVert& cv = s_vcache[dest];
+    cv.ok = false;
+    int16_t* p = t3d_vertbuffer_get_pos(vert, localVi);
     float x = (float)p[0], y = (float)p[1], z = (float)p[2];
     float oxw, oyw, ozw, oww;
     mat_mul_vec3(mvp, x, y, z, &oxw, &oyw, &ozw, &oww);
-    if (oww <= 0.001f) return false;
+    if (oww <= 0.001f) return;
     const float inv = 1.f / oww;
-    const float ndcX = oxw * inv;
-    const float ndcY = oyw * inv;
-    sx = ox + (ndcX * 0.5f + 0.5f) * vw;
-    sy = oy + (1.f - (ndcY * 0.5f + 0.5f)) * vh;
-    sz = ozw * inv; /* NDC z — closer is smaller with our proj */
-    int16_t* st = t3d_vertbuffer_get_uv(vert, vi);
-    su = (float)st[0] / 32.f;
-    sv = (float)st[1] / 32.f;
-    col = rgba_be_to_host(*t3d_vertbuffer_get_color(vert, vi));
-    if ((col & 0x00FFFFFFu) == 0)
-      col = 0xFFFFFFFFu;
-    return true;
+    cv.sx = ox + (oxw * inv * 0.5f + 0.5f) * vw;
+    cv.sy = oy + (1.f - (oyw * inv * 0.5f + 0.5f)) * vh;
+    cv.sz = ozw * inv;
+    int16_t* st = t3d_vertbuffer_get_uv(vert, localVi);
+    cv.u = (float)st[0] / 32.f;
+    cv.v = (float)st[1] / 32.f;
+    cv.col = rgba_be_to_host(*t3d_vertbuffer_get_color(vert, localVi));
+    if ((cv.col & 0x00FFFFFFu) == 0)
+      cv.col = 0xFFFFFFFFu;
+    cv.ok = true;
   };
 
-  auto draw_tri = [&](T3DVertPacked* vert, int i0, int i1, int i2) {
-    float x0, y0, z0, u0, v0, x1, y1, z1, u1, v1, x2, y2, z2, u2, v2;
-    uint32_t c0, c1, c2;
-    if (!project(vert, i0, x0, y0, z0, u0, v0, c0)) return;
-    if (!project(vert, i1, x1, y1, z1, u1, v1, c1)) return;
-    if (!project(vert, i2, x2, y2, z2, u2, v2, c2)) return;
+  auto draw_cached_tri = [&](int i0, int i1, int i2) {
+    if (i0 < 0 || i1 < 0 || i2 < 0 || i0 >= kVertCache || i1 >= kVertCache || i2 >= kVertCache)
+      return;
+    const SoftCacheVert& a = s_vcache[i0];
+    const SoftCacheVert& b = s_vcache[i1];
+    const SoftCacheVert& c = s_vcache[i2];
+    if (!a.ok || !b.ok || !c.ok) return;
     fill_tri_tex(base, stride, w, h,
-                 x0, y0, z0, u0, v0, x1, y1, z1, u1, v1, x2, y2, z2, u2, v2,
-                 tex.ok ? &tex : nullptr, c0);
+                 a.sx, a.sy, a.sz, a.u, a.v,
+                 b.sx, b.sy, b.sz, b.u, b.v,
+                 c.sx, c.sy, c.sz, c.u, c.v,
+                 tex.ok ? &tex : nullptr, a.col);
   };
 
   for (uint16_t pi = 0; pi < obj->numParts; pi++) {
     T3DObjectPart& part = obj->parts[pi];
-    if (!part.vert) continue;
+    if (!part.vert || part.vertLoadCount == 0) continue;
 
-    /* Triangle list */
+    Mat4 world = s_model;
+    if (s_bones_valid && part.matrixIdx != 0xFFFFu && (int)part.matrixIdx < s_bone_count)
+      world = mat_mul(s_model, s_bones[part.matrixIdx]);
+    const Mat4 mvp = mat_mul(s_vp_attached->proj, mat_mul(s_vp_attached->view, world));
+
+    /* Emulate RSP vert_load into a shared cache (skinned parts use absolute DMEM indices). */
+    const int destBase = (int)part.vertDestOffset;
+    for (int i = 0; i < (int)part.vertLoadCount; i++)
+      project_to_cache(mvp, part.vert, i, destBase + i);
+
+    const bool hasGeom = (part.indices && part.numIndices >= 3)
+                      || (part.idxSeqCount >= 3)
+                      || (part.numStripIndices[0] != 0);
+    if (!hasGeom)
+      continue; /* partial bone load — keep cache for later draw parts */
+
+    /* Triangle list: uint8 indices are absolute cache slots for skinned meshes. */
     if (part.indices && part.numIndices >= 3) {
       for (uint16_t i = 0; i + 2 < part.numIndices; i += 3)
-        draw_tri(part.vert, part.indices[i], part.indices[i + 1], part.indices[i + 2]);
+        draw_cached_tri(part.indices[i], part.indices[i + 1], part.indices[i + 2]);
     }
 
-    /* Sequential unindexed */
     if (part.idxSeqCount >= 3) {
       for (uint16_t i = 0; i + 2 < part.idxSeqCount; i += 3)
-        draw_tri(part.vert, part.idxSeqBase + i, part.idxSeqBase + i + 1, part.idxSeqBase + i + 2);
+        draw_cached_tri(part.idxSeqBase + i, part.idxSeqBase + i + 1, part.idxSeqBase + i + 2);
     }
 
-    /* Triangle strips (local indices, MSB = restart) — file format before DMEM convert */
+    /* Strips: file stores local indices (pre t3d_indexbuffer_convert). */
     if (part.numStripIndices[0] != 0 && part.indices) {
       uint8_t* stripPtr = (uint8_t*)align_ptr(part.indices + part.numIndices, 8);
       for (int s = 0; s < 4; ++s) {
@@ -413,16 +454,17 @@ void soft_draw_object(T3DObject* obj)
         int prev[3] = {0, 0, 0};
         bool flip = false;
         bool have = false;
+        auto loc = [&](int raw) { return destBase + (raw & 0x7FFF); };
         while (i < (int)n) {
           const uint16_t raw = (uint16_t)idx[i];
           const bool restart = (i == 0) || ((raw & 0x8000u) != 0);
-          const int v = (int)(raw & 0x7FFFu);
+          const int v = loc((int)raw);
           if (restart) {
             if (i + 2 >= (int)n) break;
             prev[0] = v;
-            prev[1] = (int)((uint16_t)idx[i + 1] & 0x7FFFu);
-            prev[2] = (int)((uint16_t)idx[i + 2] & 0x7FFFu);
-            draw_tri(part.vert, prev[0], prev[1], prev[2]);
+            prev[1] = loc((int)(uint16_t)idx[i + 1]);
+            prev[2] = loc((int)(uint16_t)idx[i + 2]);
+            draw_cached_tri(prev[0], prev[1], prev[2]);
             flip = true;
             have = true;
             i += 3;
@@ -430,9 +472,9 @@ void soft_draw_object(T3DObject* obj)
             if (!have) { i++; continue; }
             const int a = prev[1], b = prev[2], c = v;
             if (flip)
-              draw_tri(part.vert, a, c, b);
+              draw_cached_tri(a, c, b);
             else
-              draw_tri(part.vert, a, b, c);
+              draw_cached_tri(a, b, c);
             prev[0] = a;
             prev[1] = b;
             prev[2] = c;
@@ -552,6 +594,25 @@ T3DModel* t3d_model_load(const char* path)
           idx[k] = be16s(idx[k]);
         stripPtr = (uint8_t*)align_ptr(stripPtr + (size_t)part->numStripIndices[s] * 2u, 8);
       }
+    }
+  }
+
+  /* Skeleton rest-pose (needed to draw skinned meshes in bind pose). */
+  for (uint32_t i = 0; i < model->chunkCount; i++) {
+    if (T3D_CHUNK_TYPE(model->chunkOffsets[i]) != T3D_CHUNK_TYPE_SKELETON)
+      continue;
+    T3DChunkSkeleton* skel = (T3DChunkSkeleton*)((char*)model + T3D_CHUNK_OFF(model->chunkOffsets[i]));
+    skel->boneCount = be16(skel->boneCount);
+    for (uint16_t j = 0; j < skel->boneCount; j++) {
+      T3DChunkBone* bone = &skel->bones[j];
+      bone->name = (char*)(uintptr_t)be32((uint32_t)(uintptr_t)bone->name);
+      if (bone->name)
+        bone->name = (char*)((uintptr_t)model->stringTablePtr + (uintptr_t)bone->name);
+      bone->parentIdx = be16(bone->parentIdx);
+      bone->depth = be16(bone->depth);
+      for (int k = 0; k < 3; k++) bone->scale.v[k] = be_f32(bone->scale.v[k]);
+      for (int k = 0; k < 4; k++) bone->rotation.v[k] = be_f32(bone->rotation.v[k]);
+      for (int k = 0; k < 3; k++) bone->position.v[k] = be_f32(bone->position.v[k]);
     }
   }
 
@@ -704,6 +765,136 @@ void p64_dc_soft_draw_model_direct(T3DModel* model)
   T3DModelIter it = t3d_model_iter_create(model, T3D_CHUNK_TYPE_OBJECT);
   while (t3d_model_iter_next(&it))
     soft_draw_object(it.object);
+}
+
+void p64_dc_soft_skeleton_bind(const T3DSkeleton* skel)
+{
+  s_bones_valid = false;
+  s_bone_count = 0;
+  if (!skel || !skel->skeletonRef || !skel->boneMatricesFP) return;
+  const int n = (int)skel->skeletonRef->boneCount;
+  if (n <= 0 || n > kMaxBones) return;
+  const Mat4* src = (const Mat4*)skel->boneMatricesFP;
+  if (skel->bufferCount > 1)
+    src = (const Mat4*)skel->boneMatricesFP + skel->currentBufferIdx * n;
+  for (int i = 0; i < n; i++)
+    s_bones[i] = src[i];
+  s_bone_count = n;
+  s_bones_valid = true;
+}
+
+T3DSkeleton t3d_skeleton_create_buffered(const T3DModel* model, int bufferCount)
+{
+  T3DSkeleton skel{};
+  if (!model || bufferCount < 1) return skel;
+  const T3DChunkSkeleton* skelRef = t3d_model_get_skeleton(model);
+  if (!skelRef || skelRef->boneCount == 0 || skelRef->boneCount > kMaxBones) return skel;
+
+  skel.skeletonRef = skelRef;
+  skel.bufferCount = (uint8_t)bufferCount;
+  skel.currentBufferIdx = 0;
+  skel.bones = (T3DBone*)calloc((size_t)skelRef->boneCount, sizeof(T3DBone));
+  /* Soft path stores float Mat4 in the boneMatricesFP allocation (same size as T3DMat4FP). */
+  skel.boneMatricesFP = (T3DMat4FP*)calloc((size_t)skelRef->boneCount * (size_t)bufferCount, sizeof(Mat4));
+  if (!skel.bones || !skel.boneMatricesFP) {
+    free(skel.bones);
+    free(skel.boneMatricesFP);
+    return T3DSkeleton{};
+  }
+  t3d_skeleton_reset(&skel);
+  t3d_skeleton_update(&skel);
+  return skel;
+}
+
+void t3d_skeleton_reset(T3DSkeleton* skeleton)
+{
+  if (!skeleton || !skeleton->skeletonRef || !skeleton->bones) return;
+  for (int i = 0; i < skeleton->skeletonRef->boneCount; i++) {
+    const T3DChunkBone* boneDef = &skeleton->skeletonRef->bones[i];
+    skeleton->bones[i].scale = boneDef->scale;
+    skeleton->bones[i].rotation = boneDef->rotation;
+    skeleton->bones[i].position = boneDef->position;
+    skeleton->bones[i].hasChanged = true;
+  }
+}
+
+T3DSkeleton t3d_skeleton_clone(const T3DSkeleton* skel, bool useMatrices)
+{
+  T3DSkeleton result{};
+  if (!skel || !skel->skeletonRef) return result;
+  result.skeletonRef = skel->skeletonRef;
+  result.bufferCount = skel->bufferCount;
+  result.currentBufferIdx = skel->currentBufferIdx;
+  result.bones = (T3DBone*)malloc(sizeof(T3DBone) * skel->skeletonRef->boneCount);
+  if (result.bones)
+    memcpy(result.bones, skel->bones, sizeof(T3DBone) * skel->skeletonRef->boneCount);
+  if (useMatrices && skel->boneMatricesFP) {
+    const size_t n = sizeof(Mat4) * skel->skeletonRef->boneCount * skel->bufferCount;
+    result.boneMatricesFP = (T3DMat4FP*)malloc(n);
+    if (result.boneMatricesFP)
+      memcpy(result.boneMatricesFP, skel->boneMatricesFP, n);
+  }
+  return result;
+}
+
+void t3d_skeleton_update(T3DSkeleton* skeleton)
+{
+  if (!skeleton || !skeleton->skeletonRef || !skeleton->bones || !skeleton->boneMatricesFP)
+    return;
+
+  bool forceUpdate = false;
+  int updateLevel = -1;
+  Mat4* matStack = nullptr;
+
+  for (int i = 0; i < skeleton->skeletonRef->boneCount; i++) {
+    T3DBone* bone = &skeleton->bones[i];
+    const T3DChunkBone* boneDef = &skeleton->skeletonRef->bones[i];
+
+    if (forceUpdate && boneDef->depth <= updateLevel) {
+      forceUpdate = false;
+      updateLevel = -1;
+    }
+
+    if (bone->hasChanged || forceUpdate) {
+      if (!matStack) {
+        skeleton->currentBufferIdx = (uint8_t)((skeleton->currentBufferIdx + 1) % skeleton->bufferCount);
+        matStack = (Mat4*)skeleton->boneMatricesFP + skeleton->skeletonRef->boneCount * skeleton->currentBufferIdx;
+      }
+      if (!forceUpdate) updateLevel = boneDef->depth;
+      forceUpdate = true;
+
+      Mat4 local = mat_from_srt(bone->scale.v, bone->rotation.v, bone->position.v);
+      if (boneDef->parentIdx != 0xFFFF) {
+        Mat4 parent{};
+        memcpy(&parent, &skeleton->bones[boneDef->parentIdx].matrix, sizeof(Mat4));
+        Mat4 world = mat_mul(parent, local);
+        memcpy(&bone->matrix, &world, sizeof(Mat4));
+        matStack[i] = world;
+      } else {
+        memcpy(&bone->matrix, &local, sizeof(Mat4));
+        matStack[i] = local;
+      }
+      bone->hasChanged = false;
+    }
+  }
+}
+
+void t3d_skeleton_destroy(T3DSkeleton* skeleton)
+{
+  if (!skeleton) return;
+  free(skeleton->bones);
+  skeleton->bones = nullptr;
+  free(skeleton->boneMatricesFP);
+  skeleton->boneMatricesFP = nullptr;
+  skeleton->skeletonRef = nullptr;
+}
+
+void t3d_segment_set(uint8_t segmentId, void* ptr)
+{
+  if (segmentId == T3D_SEGMENT_SKELETON && ptr) {
+    /* Count unknown here; AnimModel calls p64_dc_soft_skeleton_bind instead. */
+    (void)ptr;
+  }
 }
 
 } // extern "C"

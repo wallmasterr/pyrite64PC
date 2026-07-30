@@ -13,6 +13,10 @@
 #include "scene/scene.h"
 #include "scene/sceneManager.h"
 
+#ifdef PLATFORM_DC
+extern "C" void p64_dc_soft_skeleton_bind(const T3DSkeleton* skel);
+#endif
+
 namespace
 {
   struct InitData
@@ -22,6 +26,31 @@ namespace
     uint8_t flags;
     P64::Renderer::MaterialInstance material;
   };
+
+  void recordAnimModelMeshes(T3DModel* model)
+  {
+    if (!model || model->userBlock)
+      return;
+    rspq_block_begin();
+#ifndef PLATFORM_DC
+    P64::Renderer::MaterialState state{};
+#endif
+    auto it = t3d_model_iter_create(model, T3D_CHUNK_TYPE_OBJECT);
+    while (t3d_model_iter_next(&it)) {
+#ifndef PLATFORM_DC
+      auto* mat = (P64::Renderer::Material*)it.object->material;
+      assert(mat);
+      mat->begin(state);
+      auto boneSeg = (const T3DMat4FP*)t3d_segment_placeholder(T3D_SEGMENT_SKELETON);
+      t3d_model_draw_object(it.object, boneSeg);
+      mat->end(state);
+#else
+      /* Soft path: draw bind-pose mesh; skinning not implemented yet. */
+      t3d_model_draw_object(it.object, nullptr);
+#endif
+    }
+    model->userBlock = rspq_block_end();
+  }
 }
 
 namespace P64::Comp
@@ -47,6 +76,22 @@ namespace P64::Comp
   {
     auto *initData = (InitData*)initData_;
     if (initData == nullptr) {
+#ifdef PLATFORM_DC
+      /* Soft path may never allocate skeleton/anim tables. */
+      if (data->anims && data->skelAnim && data->model) {
+        auto it = t3d_model_iter_create(data->model, T3D_CHUNK_TYPE_ANIM);
+        uint32_t i = 0;
+        while (t3d_model_iter_next(&it)) {
+          t3d_anim_destroy(&data->anims[i]);
+          t3d_skeleton_destroy(&data->skelAnim[i]);
+          ++i;
+        }
+      }
+      if (data->skelMain.bones || data->skelMain.boneMatricesFP)
+        t3d_skeleton_destroy(&data->skelMain);
+      free(data->skelAnim);
+      free(data->anims);
+#else
       auto it = t3d_model_iter_create(data->model, T3D_CHUNK_TYPE_ANIM);
       uint32_t i=0;
       while(t3d_model_iter_next(&it)) {
@@ -57,6 +102,7 @@ namespace P64::Comp
       t3d_skeleton_destroy(&data->skelMain);
       free(data->skelAnim);
       free(data->anims);
+#endif
 
       data->~AnimModel();
       return;
@@ -65,7 +111,14 @@ namespace P64::Comp
     new(data) AnimModel();
 
     data->model = (T3DModel*)AssetManager::getByIndex(initData->assetIdx);
+#ifdef PLATFORM_DC
+    if (!data->model) {
+      printf("[p64] AnimModel init: asset %u failed to load\n", (unsigned)initData->assetIdx);
+      return;
+    }
+#else
     assert(data->model != nullptr);
+#endif
     data->layerIdx = initData->layer;
     data->flags = initData->flags;
 
@@ -78,6 +131,15 @@ namespace P64::Comp
 
     data->material.init();
 
+#ifdef PLATFORM_DC
+    /* Soft Tiny3D: bind-pose skeleton + RSP-style vertex cache in dc_soft3d. */
+    data->skelMain = t3d_skeleton_create_buffered(data->model, 1);
+    if (!data->skelMain.skeletonRef) {
+      printf("[p64] AnimModel: no skeleton in model (asset %u)\n", (unsigned)initData->assetIdx);
+    }
+    recordAnimModelMeshes(data->model);
+    return;
+#else
     /*bool isBigTex = SceneManager::getCurrent().getConf().pipeline == SceneConf::Pipeline::BIG_TEX_256;
 
     if(isBigTex) {
@@ -111,26 +173,17 @@ namespace P64::Comp
       ++i;
     }
 
-    Renderer::MaterialState state{};
-
-    if(data->model->userBlock)return; // already recorded the model
-    rspq_block_begin();
-
-    auto boneSeg = (const T3DMat4FP*)t3d_segment_placeholder(T3D_SEGMENT_SKELETON);
-    it = t3d_model_iter_create(data->model, T3D_CHUNK_TYPE_OBJECT);
-    while(t3d_model_iter_next(&it))
-    {
-      auto *mat = (P64::Renderer::Material*)it.object->material;
-      assert(mat);
-      mat->begin(state);
-      t3d_model_draw_object(it.object, boneSeg);
-      mat->end(state);
-    }
-
-    data->model->userBlock = rspq_block_end();
+    recordAnimModelMeshes(data->model);
+#endif
   }
 
   void AnimModel::update(Object&obj, AnimModel* data, float deltaTime) {
+#ifdef PLATFORM_DC
+    (void)obj;
+    (void)data;
+    (void)deltaTime;
+    return;
+#else
     if (data->animIdxMain >= 0) {
       t3d_anim_update(&data->anims[data->animIdxMain], deltaTime);
     }
@@ -146,10 +199,15 @@ namespace P64::Comp
     }
 
     t3d_skeleton_update(&data->skelMain);
+#endif
   }
 
   void AnimModel::draw(Object &obj, AnimModel* data, float deltaTime)
   {
+    (void)deltaTime;
+    if (!data->model || !data->model->userBlock)
+      return;
+
     auto mat = data->matFP.getNext();
     t3d_mat4fp_from_srt(mat, obj.scale, obj.rot, obj.pos);
 
@@ -157,7 +215,11 @@ namespace P64::Comp
 
     data->material.begin(obj);
 
+#ifdef PLATFORM_DC
+    p64_dc_soft_skeleton_bind(&data->skelMain);
+#else
     t3d_skeleton_use(&data->skelMain);
+#endif
     t3d_matrix_set(mat, true);
     rspq_block_run(data->model->userBlock);
 

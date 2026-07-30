@@ -687,6 +687,8 @@ joypad_buttons_t joypad_get_buttons_held(joypad_port_t port) {
 #include <t3d/t3d.h>
 #include <t3d/tpx.h>
 #include <t3d/t3dmodel.h>
+#include <t3d/t3dskeleton.h>
+#include <t3d/t3danim.h>
 extern "C" {
 void t3d_init(T3DInitParams) {}
 void t3d_destroy(void) {}
@@ -725,19 +727,15 @@ void t3d_screen_clear_color(color_t c) {
     }
   }
 }
-void t3d_anim_attach(void*, void*) {}
-void* t3d_skeleton_create_buffered(void) { return nullptr; }
-void t3d_skeleton_update(void*) {}
-void* t3d_skeleton_clone(void*) { return nullptr; }
-void* t3d_anim_create(void) { return nullptr; }
+void t3d_anim_attach(T3DAnim*, const T3DSkeleton*) {}
+T3DAnim t3d_anim_create(const T3DModel*, const char*) { return T3DAnim{}; }
 void t3d_model_draw_material(T3DMaterial* mat, T3DModelState* state) { (void)mat; (void)state; }
-void t3d_anim_destroy(void*) {}
-void t3d_skeleton_destroy(void*) {}
+void t3d_anim_destroy(T3DAnim*) {}
 void t3d_state_set_vertex_fx(T3DVertexFX, int16_t, int16_t) {}
-void t3d_anim_update(void*, float) {}
-void t3d_anim_set_time(void*, float) {}
-void t3d_skeleton_blend(void*, void*, void*, float) {}
-void t3d_segment_set(uint8_t, void*) {}
+void t3d_anim_update(T3DAnim*, float) {}
+void t3d_anim_set_time(T3DAnim*, float) {}
+void t3d_skeleton_blend(const T3DSkeleton*, const T3DSkeleton*, const T3DSkeleton*, float) {}
+/* t3d_skeleton_create/update/destroy/clone + segment_set: dc_soft3d.cpp */
 void t3d_metrics_fetch(T3DMetrics* data) { (void)data; }
 void t3d_light_set_directional(int, const uint8_t*, const T3DVec3*) {}
 void t3d_light_set_ambient(const uint8_t*) {}

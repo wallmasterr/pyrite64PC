@@ -15,6 +15,7 @@
 #include "scene/componentTable.h"
 #include "scene/components/camera.h"
 #include "scene/components/model.h"
+#include "scene/components/animModel.h"
 #include "scene/components/code.h"
 #include "scene/components/nodeGraph.h"
 
@@ -173,6 +174,17 @@ namespace {
         uint16_t* setMask = reinterpret_cast<uint16_t*>(mat + 1);
         *setMask = be16(*setMask);
       }
+    } else if (compId == P64::Comp::AnimModel::ID) {
+      /* Layout: u16 assetIdx, u8 layer, u8 flags, then MaterialInstance (dataSize, setMask, …). */
+      using P64::AssetEndian::be16;
+      using P64::AssetEndian::be32;
+      if (initBytes < 8u) return;
+      uint16_t* u16 = reinterpret_cast<uint16_t*>(initData);
+      u16[0] = be16(u16[0]); /* assetIdx */
+      uint32_t* mat = reinterpret_cast<uint32_t*>(initData + 4);
+      mat[0] = be32(mat[0]); /* dataSize */
+      uint16_t* setMask = reinterpret_cast<uint16_t*>(mat + 1);
+      *setMask = be16(*setMask);
     } else if (compId == P64::Comp::Code::ID) {
       /* Layout: u16 scriptIdx, u16 pad, then editor args as 4-byte BE words (float/u32). */
       using P64::AssetEndian::be16;
