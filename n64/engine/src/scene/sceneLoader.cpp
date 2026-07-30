@@ -15,6 +15,8 @@
 #include "scene/componentTable.h"
 #include "scene/components/camera.h"
 #include "scene/components/model.h"
+#include "scene/components/code.h"
+#include "scene/components/nodeGraph.h"
 
 #ifdef PLATFORM_PC
 #include "pc_platform.h"
@@ -151,7 +153,7 @@ namespace {
 #endif
   }
 
-  void nativeCompInitData(uint8_t compId, uint8_t* initData)
+  void nativeCompInitData(uint8_t compId, uint8_t* initData, uint32_t initBytes)
   {
 #ifdef PLATFORM_PC
     if (!initData) return;
@@ -171,10 +173,28 @@ namespace {
         uint16_t* setMask = reinterpret_cast<uint16_t*>(mat + 1);
         *setMask = be16(*setMask);
       }
+    } else if (compId == P64::Comp::Code::ID) {
+      /* Layout: u16 scriptIdx, u16 pad, then editor args as 4-byte BE words (float/u32). */
+      using P64::AssetEndian::be16;
+      using P64::AssetEndian::be32;
+      if (initBytes < 4u) return;
+      uint16_t* u16 = reinterpret_cast<uint16_t*>(initData);
+      u16[0] = be16(u16[0]);
+      u16[1] = be16(u16[1]);
+      for (uint32_t off = 4u; off + 4u <= initBytes; off += 4u) {
+        uint32_t* w = reinterpret_cast<uint32_t*>(initData + off);
+        *w = be32(*w);
+      }
+    } else if (compId == P64::Comp::NodeGraph::ID) {
+      using P64::AssetEndian::be16;
+      if (initBytes < 2u) return;
+      uint16_t* u16 = reinterpret_cast<uint16_t*>(initData);
+      u16[0] = be16(u16[0]); /* assetIdx */
     }
 #else
     (void)compId;
     (void)initData;
+    (void)initBytes;
 #endif
   }
 }
@@ -288,7 +308,7 @@ P64::Object* P64::Scene::loadObject(uint8_t* &objFile, std::function<void(Object
       return fail();
     if (!blob_has(ptrIn + 4, argSize - 4u, fileEnd))
       return fail();
-    nativeCompInitData(compId, ptrIn + 4);
+    nativeCompInitData(compId, ptrIn + 4, argSize - 4u);
     compDataSize += Math::alignUp(compDef.getAllocSize(ptrIn + 4), DATA_ALIGN);
     allocSize += sizeof(Object::CompRef);
 

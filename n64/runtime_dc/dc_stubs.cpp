@@ -60,10 +60,11 @@ uint64_t get_user_ticks(void) { return get_ticks(); }
 bool is_memory_expanded(void) { return true; }
 }
 
-/* --- __mi_memset32 (N64 malloc/uncached fill; used by BootChecks.cpp) --- */
+/* --- __mi_memset32 (N64 MI fill; len is bytes, must be multiple of 4) --- */
 extern "C" void* __mi_memset32(void* ptr, uint32_t value, size_t len) {
   uint32_t* p = static_cast<uint32_t*>(ptr);
-  while (len--) *p++ = value;
+  for (size_t n = len / 4; n > 0; --n)
+    *p++ = value;
   return ptr;
 }
 
@@ -395,7 +396,16 @@ void __rdpq_write8(uint32_t, uint32_t, uint32_t) {}
 void __rdpq_set_scissor(uint32_t, uint32_t) {}
 void __rdpq_set_mode_fill(void) {}
 void __rdpq_set_fill_color(uint32_t packed) { s_pc_fill_color = packed; }
-void __rdpq_fill_rectangle(uint32_t, uint32_t) {}
+void __rdpq_fill_rectangle_offline(int32_t x0, int32_t y0, int32_t x1, int32_t y1);
+/* Packed 10.2 fixed coords from rdpq_rect.h inline path (constant rectangles). */
+void __rdpq_fill_rectangle(uint32_t w0, uint32_t w1)
+{
+  const int32_t x1 = (int32_t)((w0 >> 12) & 0xFFFu);
+  const int32_t y1 = (int32_t)(w0 & 0xFFFu);
+  const int32_t x0 = (int32_t)((w1 >> 12) & 0xFFFu);
+  const int32_t y0 = (int32_t)(w1 & 0xFFFu);
+  __rdpq_fill_rectangle_offline(x0, y0, x1, y1);
+}
 void __rdpq_fill_rectangle_offline(int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
   if (!s_pc_current_color_image || !s_pc_current_color_image->buffer) return;
   int px0 = x0 / 4, py0 = y0 / 4, px1 = x1 / 4, py1 = y1 / 4;
@@ -725,6 +735,7 @@ void t3d_anim_destroy(void*) {}
 void t3d_skeleton_destroy(void*) {}
 void t3d_state_set_vertex_fx(T3DVertexFX, int16_t, int16_t) {}
 void t3d_anim_update(void*, float) {}
+void t3d_anim_set_time(void*, float) {}
 void t3d_skeleton_blend(void*, void*, void*, float) {}
 void t3d_segment_set(uint8_t, void*) {}
 void t3d_metrics_fetch(T3DMetrics* data) { (void)data; }
@@ -900,6 +911,12 @@ extern "C" void rspq_profile_get_data(void*) {}
 
 /* RSPQ deferred callback and block free (e.g. user script Credits.cpp destroy) */
 extern "C" void rspq_block_free(rspq_block_t* block) { (void)block; }
+/* rspq_call_deferred is inline in rspq.h and calls this — run CB immediately on DC */
+extern "C" rspq_syncpoint_t rspq_syncpoint_new_cb(void (*func)(void*), void* arg)
+{
+  if (func) func(arg);
+  return (rspq_syncpoint_t)0;
+}
 /* rspq_call_deferred is inline in rspq.h */
 
 /* --- Extra fmath / fgeom (headers only from libdragon; implement for host) --- */
@@ -928,6 +945,28 @@ void fm_quat_mul(fm_quat_t* out, const fm_quat_t* a, const fm_quat_t* b) {
   r.w = a->w * b->w - a->x * b->x - a->y * b->y - a->z * b->z;
   *out = r;
 }
+
+void fm_quat_rotate(fm_quat_t* out, const fm_quat_t* q, const fm_vec3_t* axis, float angle)
+{
+  if (!out || !q || !axis) return;
+  fm_quat_t delta;
+  fm_quat_from_axis_angle(&delta, axis, angle);
+  fm_quat_mul(out, q, &delta);
+}
+
+void fm_quat_from_euler_zyx(fm_quat_t* out, float x, float y, float z)
+{
+  if (!out) return;
+  const float cx = cosf(x * 0.5f), sx = sinf(x * 0.5f);
+  const float cy = cosf(y * 0.5f), sy = sinf(y * 0.5f);
+  const float cz = cosf(z * 0.5f), sz = sinf(z * 0.5f);
+  const fm_quat_t qx = {{sx, 0.0f, 0.0f, cx}};
+  const fm_quat_t qy = {{0.0f, sy, 0.0f, cy}};
+  const fm_quat_t qz = {{0.0f, 0.0f, sz, cz}};
+  fm_quat_t qyqz;
+  fm_quat_mul(&qyqz, &qy, &qz);
+  fm_quat_mul(out, &qx, &qyqz);
+}
 }
 
 /* --- RSPQ block reuse / placeholders --- */
@@ -945,6 +984,7 @@ void xm64player_set_loop(xm64player_t* player, bool loop) { (void)player; (void)
 void xm64player_set_vol(xm64player_t* player, float vol) { (void)player; (void)vol; }
 int xm64player_num_channels(xm64player_t* player) { (void)player; return 0; }
 void xm64player_play(xm64player_t* player, int first_ch) { (void)player; (void)first_ch; }
+void xm64player_stop(xm64player_t* player) { (void)player; }
 void xm64player_open(xm64player_t* player, const char* path) { (void)player; (void)path; }
 void xm64player_close(xm64player_t* player) { (void)player; }
 void __debug_init_cpp(void) {}

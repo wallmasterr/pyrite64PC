@@ -35,11 +35,108 @@ static inline uint16_t rgba8_to_rgb565(uint8_t r, uint8_t g, uint8_t b)
   return (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
 }
 
+/* 3x5 digits + a few glyphs, bit0 = left column of each row */
+static const uint8_t kFont3x5[][5] = {
+  {0x7,0x5,0x5,0x5,0x7}, /* 0 */
+  {0x2,0x6,0x2,0x2,0x7}, /* 1 */
+  {0x7,0x1,0x7,0x4,0x7}, /* 2 */
+  {0x7,0x1,0x7,0x1,0x7}, /* 3 */
+  {0x5,0x5,0x7,0x1,0x1}, /* 4 */
+  {0x7,0x4,0x7,0x1,0x7}, /* 5 */
+  {0x7,0x4,0x7,0x5,0x7}, /* 6 */
+  {0x7,0x1,0x1,0x1,0x1}, /* 7 */
+  {0x7,0x5,0x7,0x5,0x7}, /* 8 */
+  {0x7,0x5,0x7,0x1,0x7}, /* 9 */
+  {0x7,0x5,0x7,0x5,0x5}, /* A=10 F-ish for 'F' use index 11 */
+  {0x7,0x4,0x7,0x4,0x4}, /* F=11 */
+  {0x7,0x5,0x7,0x5,0x5}, /* P=12 */
+  {0x7,0x4,0x7,0x4,0x7}, /* S=13 */
+  {0x0,0x0,0x0,0x0,0x0}, /* space=14 */
+  {0x0,0x2,0x0,0x2,0x0}, /* :=15 */
+};
+
+static int glyph_index(char c)
+{
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c == 'F' || c == 'f') return 11;
+  if (c == 'P' || c == 'p') return 12;
+  if (c == 'S' || c == 's') return 13;
+  if (c == ':') return 15;
+  if (c == 'A' || c == 'a') return 10;
+  return 14;
+}
+
+static void vram_draw_char(uint16_t* vram, int vw, int vh, int x, int y, char c, uint16_t color, int scale)
+{
+  if (!vram || scale < 1) return;
+  const uint8_t* g = kFont3x5[glyph_index(c)];
+  for (int row = 0; row < 5; row++) {
+    for (int col = 0; col < 3; col++) {
+      if (!(g[row] & (1u << (2 - col)))) continue;
+      for (int sy = 0; sy < scale; sy++) {
+        for (int sx = 0; sx < scale; sx++) {
+          const int px = x + col * scale + sx;
+          const int py = y + row * scale + sy;
+          if (px < 0 || py < 0 || px >= vw || py >= vh) continue;
+          vram[py * vw + px] = color;
+        }
+      }
+    }
+  }
+}
+
+static void vram_draw_text(uint16_t* vram, int vw, int vh, int x, int y, const char* text, uint16_t color, int scale)
+{
+  if (!text) return;
+  int cx = x;
+  const int advance = (3 + 1) * scale;
+  for (const char* p = text; *p; ++p) {
+    vram_draw_char(vram, vw, vh, cx, y, *p, color, scale);
+    cx += advance;
+  }
+}
+
+static float s_fps_display = 0.f;
+
 static void show_solid(uint8_t r, uint8_t g, uint8_t b)
 {
   vid_clear(r, g, b);
   vid_flip(-1);
   vid_waitvbl();
+}
+
+static void fps_tick(void)
+{
+  static uint64_t window_start = 0;
+  static unsigned window_frames = 0;
+  const uint64_t now = timer_ms_gettime64();
+  if (window_start == 0)
+    window_start = now;
+  ++window_frames;
+  const uint64_t elapsed = now - window_start;
+  if (elapsed >= 500) {
+    s_fps_display = (float)window_frames * 1000.f / (float)elapsed;
+    window_start = now;
+    window_frames = 0;
+  }
+}
+
+static void draw_fps_overlay(void)
+{
+  uint16_t* vram = (uint16_t*)vram_s;
+  if (!vram || !vid_mode) return;
+  const int vw = vid_mode->width;
+  const int vh = vid_mode->height;
+  char buf[24];
+  const int fps_i = (int)(s_fps_display + 0.5f);
+  snprintf(buf, sizeof(buf), "FPS:%d", fps_i);
+
+  /* Shadow + bright text near top-left (right of heartbeat) */
+  const int scale = 2;
+  const int x = 20;
+  const int y = 4;
+  vram_draw_text(vram, vw, vh, x + 1, y + 1, buf, rgba8_to_rgb565(0, 0, 0), scale);
+  vram_draw_text(vram, vw, vh, x, y, buf, rgba8_to_rgb565(255, 255, 64), scale);
 }
 
 static void draw_heartbeat_overlay(void)
@@ -51,9 +148,9 @@ static void draw_heartbeat_overlay(void)
   const int vw = vid_mode->width;
   const uint8_t pulse = (uint8_t)((tick * 8u) & 255u);
   const uint16_t c = rgba8_to_rgb565(255, pulse, 0);
-  for (int y = 0; y < 16; y++) {
+  for (int y = 0; y < 12; y++) {
     uint16_t* row = vram + y * vw;
-    for (int x = 0; x < 16; x++)
+    for (int x = 0; x < 12; x++)
       row[x] = c;
   }
 }
@@ -65,6 +162,7 @@ static void present_fast_clear_with_heartbeat(void)
   (void)a;
   vid_clear(r, g, b);
   draw_heartbeat_overlay();
+  draw_fps_overlay();
   vid_flip(-1);
 }
 
@@ -108,6 +206,7 @@ static void present_display_buffer_full(void)
   }
 
   draw_heartbeat_overlay();
+  draw_fps_overlay();
   vid_flip(-1);
 }
 
@@ -133,15 +232,13 @@ int main(int argc, char** argv)
 
   p64_engine_init();
   printf("p64: engine_init done\n");
-  show_solid(0, 255, 64); /* green = init OK */
+  /* Skip solid-color boot flash; first present shows game FB + FPS overlay. */
 
   uint64_t last = timer_ms_gettime64();
   unsigned frame = 0;
   for (;;) {
-    if (frame == 0) {
-      show_solid(255, 255, 0); /* yellow = first frame / scene load */
+    if (frame == 0)
       printf("p64: first frame (scene construct)...\n");
-    }
 
     uint64_t now = timer_ms_gettime64();
     float dt = (float)(now - last) / 1000.0f;
@@ -150,11 +247,10 @@ int main(int argc, char** argv)
       dt = 1.0f / 60.0f;
 
     p64_engine_run_frame(dt);
+    fps_tick();
 
-    if (frame == 0) {
-      show_solid(255, 0, 255); /* magenta = first frame returned */
+    if (frame == 0)
       printf("p64: first frame done, presenting...\n");
-    }
 
 #if P64_DC_FULL_SOFT_PRESENT
     present_display_buffer_full();

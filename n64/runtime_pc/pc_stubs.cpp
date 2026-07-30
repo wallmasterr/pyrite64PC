@@ -50,10 +50,11 @@ uint64_t get_user_ticks(void) { return get_ticks(); }
 bool is_memory_expanded(void) { return true; }
 }
 
-/* --- __mi_memset32 (N64 malloc/uncached fill; used by BootChecks.cpp) --- */
+/* --- __mi_memset32 (N64 MI fill; len is bytes, must be multiple of 4) --- */
 extern "C" void* __mi_memset32(void* ptr, uint32_t value, size_t len) {
   uint32_t* p = static_cast<uint32_t*>(ptr);
-  while (len--) *p++ = value;
+  for (size_t n = len / 4; n > 0; --n)
+    *p++ = value;
   return ptr;
 }
 

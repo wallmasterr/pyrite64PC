@@ -32,6 +32,12 @@ P64::PTX::Sprites::Sprites(const char* spritePath, const Conf &conf_)
   system.count = 0;
   system.pos = {-999,0,0}; // forces matrix creation for 0,0,0
 
+  if (!sprite || sprite->height < 8) {
+    setupDPL = nullptr;
+    mirrorPt = 0;
+    return;
+  }
+
   rspq_block_begin();
   {
     rdpq_mode_begin();
